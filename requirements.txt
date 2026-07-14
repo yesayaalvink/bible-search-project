@@ -5,4 +5,4 @@ requests
 scikit-learn
 sentence-transformers
 torchvision
-plotly
+google-genai
