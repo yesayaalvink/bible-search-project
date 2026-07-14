@@ -238,7 +238,7 @@ with tab1:
             with st.spinner("AI sedang mencocokkan makna ayat teologis..."):
                 vektor_tanya = get_vektor_pertanyaan(pertanyaan)
                 
-                if| vektor_tanya is not None:
+                if vektor_tanya is not None:
                     if len(vektor_tanya.shape) == 1:
                         vektor_tanya = vektor_tanya.reshape(1, -1)
                         
@@ -279,7 +279,7 @@ with tab1:
                             f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
                         )
                         
-                        # 1. Coba AI Utama (Gemini)
+                        # 1. Coba AI Utama (Gemini - Sangat Cepat!)
                         success_rag = False
                         with st.spinner("Menghubungi AI Utama (Gemini 3.5 Flash)..."):
                             analisis_rag = panggil_gemini_rag(prompt_rag)
