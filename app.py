@@ -19,8 +19,8 @@ REPO_ID = "YesayaAlvink/bible-search-project"
 # Token rahasia Anda untuk memproses pencarian lewat API
 HF_TOKEN = st.secrets["HF_TOKEN"] 
 
-# URL langsung untuk mengakses model tanpa lewat sistem router yang bermasalah
-API_URL = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{REPO_ID}"
+# URL RESMI BARU 2026 (Menggunakan Router Baru Hugging Face)
+API_URL = f"https://router.huggingface.co/hf-inference/models/{REPO_ID}/pipeline/feature-extraction"
 
 
 # ==========================================
@@ -46,7 +46,7 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 def get_vektor_pertanyaan(pertanyaan):
     try:
         headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-        # Mengirimkan permintaan langsung (Direct HTTP POST)
+        # Mengirimkan permintaan langsung ke router baru Hugging Face
         response = requests.post(API_URL, headers=headers, json={"inputs": pertanyaan})
         
         if response.status_code == 200:
