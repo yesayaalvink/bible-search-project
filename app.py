@@ -6,20 +6,18 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+import requests  # Menggunakan library requests standar untuk menghindari bug HuggingFace
 from sklearn.metrics.pairwise import cosine_similarity
-from huggingface_hub import hf_hub_download, InferenceClient
+from huggingface_hub import hf_hub_download
 
 # ==========================================
 # 1. ATUR ALAMAT REPOSITORI HUGGING FACE
 # ==========================================
-# Repositori tunggal yang menampung file model AI dan database_ta.pkl
 REPO_ID = "YesayaAlvink/bible-search-project"
-
-# Token rahasia Anda untuk memproses pencarian lewat API
 HF_TOKEN = st.secrets["HF_TOKEN"] 
 
-# Inisialisasi client resmi Hugging Face
-client = InferenceClient(token=HF_TOKEN)
+# URL langsung untuk mengakses model tanpa lewat sistem router yang bug
+API_URL = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{REPO_ID}"
 
 
 # ==========================================
@@ -44,14 +42,25 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
-        # Meminta representasi vektor kalimat menggunakan model yang sudah di-upload ke repo yang sama
-        embedding = client.feature_extraction(
-            pertanyaan, 
-            model=REPO_ID
-        )
-        return np.array(embedding)
+        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        # Mengirimkan permintaan langsung (Direct HTTP POST)
+        response = requests.post(API_URL, headers=headers, json={"inputs": pertanyaan})
+        
+        if response.status_code == 200:
+            return np.array(response.json())
+        elif response.status_code == 503:
+            # Model sedang loading (cold start) di server Hugging Face
+            st.warning("Model AI sedang dibangunkan (loading). Silakan tunggu sekitar 15 detik lalu klik Cari lagi.")
+            return None
+        else:
+            st.error(f"Gagal memproses kalimat. Status: {response.status_code}, Detail: {response.text}")
+            return None
+            
+    except requests.exceptions.ConnectionError:
+        st.error("Terjadi masalah koneksi internet sementara pada server. Silakan klik Cari lagi beberapa saat lagi.")
+        return None
     except Exception as e:
-        st.error(f"Gagal memproses kalimat: {repr(e)}. Silakan coba klik Cari lagi.")
+        st.error(f"Terjadi kesalahan: {repr(e)}. Silakan coba klik Cari lagi.")
         return None
 
 
