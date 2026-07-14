@@ -1,7 +1,14 @@
 import os
+import streamlit as st
+
 # ==========================================
-# TRIK FINAL: BERSIHKAN SEMUA TOKEN DARI MEMORI SISTEM
+# TRIK RAHASIA: BERSIHKAN SEMUA TOKEN DARI MEMORI SISTEM
 # ==========================================
+# 1. Ambil nilai token secara aman dari Secrets sebelum memorinya dibersihkan
+HF_TOKEN_VAL = st.secrets.get("HF_TOKEN", "")
+GEMINI_API_KEY_VAL = st.secrets.get("GEMINI_API_KEY", "")
+
+# 2. Hapus token dari environment OS agar Hugging Face SDK tidak terganggu saat download
 os.environ.pop("HF_TOKEN", None)
 os.environ.pop("HF_HUB_TOKEN", None)
 os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
@@ -11,7 +18,6 @@ os.environ.pop("HUGGINGFACE_CO_TOKEN", None)
 os.environ["HF_HUB_DISABLE_XET"] = "1"
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 
-import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
@@ -28,11 +34,8 @@ from google.genai import types  # <--- Ditambahkan untuk mengatur tingkat berpik
 # ==========================================
 REPO_ID = "YesayaAlvinK/bible-search-project"
 
-# API Key Gemini Google AI Studio Anda
-GEMINI_API_KEY = "AQ.Ab8RN6L93mL4H_7FEw90PvUcCWVLFpG4I6e2wJTp821cF-IOQw"
-
-# Inisialisasi Google GenAI Client resmi menggunakan API Key Anda
-client_gemini = genai.Client(api_key=GEMINI_API_KEY)
+# Inisialisasi Google GenAI Client resmi menggunakan API Key Anda dari Secrets
+client_gemini = genai.Client(api_key=GEMINI_API_KEY_VAL)
 
 
 # ==========================================
@@ -117,19 +120,7 @@ model = load_model()
 # ==========================================
 # 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH - GOOGLE GENAI SDK)
 # ==========================================
-def panggil_gemini_rag(query, daftar_ayat):
-    konteks_ayat = ""
-    for i, baris in enumerate(daftar_ayat):
-        konteks_ayat += f"\n{i+1}. {baris['kitab']} {baris['pasal']}:{baris['ayat']} -> {baris['teks_tb']}"
-        
-    prompt = (
-        f"Anda adalah seorang asisten Teologi Kristen yang ahli dalam penafsiran Alkitab. "
-        f"Pengguna sedang mencari topik: '{query}'.\n\n"
-        f"Berikut adalah 3 ayat relevan yang ditemukan dari Alkitab:\n{konteks_ayat}\n\n"
-        f"Berikan penjelasan singkat teologis (maksimal 3-4 kalimat) dalam bahasa Indonesia, "
-        f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
-    )
-    
+def panggil_gemini_rag(prompt):
     try:
         # Menggunakan pustaka resmi google-genai dengan memotong waktu berpikir AI menjadi minimal
         interaction = client_gemini.interactions.create(
@@ -137,7 +128,7 @@ def panggil_gemini_rag(query, daftar_ayat):
             input=prompt,
             generation_config=types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(
-                    thinking_level="minimal"  # <--- Memaksa AI langsung menjawab tanpa membuang waktu berpikir
+                    thinking_level="minimal"  # <--- Memaksa AI langsung menjawab tanpa membuang waktu berpikir (2-3 detik)
                 )
             )
         )
