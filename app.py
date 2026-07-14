@@ -2,29 +2,25 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
-import requests  # Menggunakan requests untuk mengunduh database & inference
+import requests
 from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
 
 # ==========================================
 # 1. ATUR ALAMAT REPOSITORI HUGGING FACE
 # ==========================================
 REPO_ID = "YesayaAlvink/bible-search-project"
-HF_TOKEN = st.secrets["HF_TOKEN"] 
-
-# URL Resmi Baru 2026 (Sistem Router Baru Hugging Face)
-API_URL = f"https://router.huggingface.co/hf-inference/models/{REPO_ID}/pipeline/feature-extraction"
 
 
 # ==========================================
-# 2. PROSES MEMUAT DATABASE DARI CLOUD (MENGGUNAKAN REQUESTS - BEBAS CACHE RUSAK)
+# 2. PROSES MEMUAT DATABASE DARI CLOUD (MANDIRI)
 # ==========================================
 @st.cache_resource
 def load_database():
-    # Unduh file pkl langsung via HTTP Resolve URL (Bypass library HF SDK & Cache rusak)
     url_database = f"https://huggingface.co/{REPO_ID}/resolve/main/database_ta.pkl"
     local_filename = "database_ta.pkl"
     
-    # Proses unduh secara bertahap (chunking) agar hemat memori RAM Streamlit
+    # Mengunduh database secara bertahap agar hemat RAM
     with requests.get(url_database, stream=True) as r:
         r.raise_for_status()
         with open(local_filename, 'wb') as f:
@@ -32,7 +28,6 @@ def load_database():
                 if chunk:
                     f.write(chunk)
                     
-    # Membaca database hasil unduhan bersih
     with open(local_filename, "rb") as f:
         data = pickle.load(f)
     return data["tabel_ayat"], data["vektor_ayat"]
@@ -41,34 +36,32 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 
 
 # ==========================================
-# 3. PROSES MEMINTA VEKTOR DARI MODEL AI
+# 3. PROSES MEMUAT MODEL AI DI SERVER STREAMLIT
+# ==========================================
+@st.cache_resource
+def load_model():
+    # Mengunduh dan memuat model IndoBERT Anda langsung ke memori server Streamlit
+    # Ini hanya berjalan sekali saat aplikasi pertama kali dijalankan
+    return SentenceTransformer(REPO_ID)
+
+model = load_model()
+
+
+# ==========================================
+# 4. PROSES MEMINTA VEKTOR DARI MODEL AI
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
-        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-        # Mengirimkan permintaan langsung ke router baru Hugging Face
-        response = requests.post(API_URL, headers=headers, json={"inputs": pertanyaan})
-        
-        if response.status_code == 200:
-            return np.array(response.json())
-        elif response.status_code == 503:
-            # Model sedang dibangunkan (cold start) di server Hugging Face
-            st.warning("Model AI sedang dibangunkan (loading). Silakan tunggu sekitar 15 detik lalu klik Cari lagi.")
-            return None
-        else:
-            st.error(f"Gagal memproses kalimat. Status: {response.status_code}, Detail: {response.text}")
-            return None
-            
-    except requests.exceptions.ConnectionError:
-        st.error("Terjadi masalah koneksi internet sementara pada server. Silakan klik Cari lagi beberapa saat lagi.")
-        return None
+        # Memproses kata pencarian secara lokal di server Streamlit
+        vektor = model.encode([pertanyaan])
+        return np.array(vektor)
     except Exception as e:
         st.error(f"Terjadi kesalahan: {repr(e)}. Silakan coba klik Cari lagi.")
         return None
 
 
 # ==========================================
-# 4. TAMPILAN USER INTERFACE (UI)
+# 5. TAMPILAN USER INTERFACE (UI)
 # ==========================================
 st.title("Pencarian Semantik Alkitab (IndoBERT)")
 st.write("Cari ayat berdasarkan makna cerita, bukan sekadar kata kunci.")
@@ -81,7 +74,7 @@ if st.button("Cari"):
             vektor_tanya = get_vektor_pertanyaan(pertanyaan)
             
             if vektor_tanya is not None:
-                # Samakan dimensi angka (syarat perhitungan matematika)
+                # Samakan dimensi angka
                 if len(vektor_tanya.shape) == 1:
                     vektor_tanya = vektor_tanya.reshape(1, -1)
                 elif len(vektor_tanya.shape) == 3:
@@ -90,13 +83,11 @@ if st.button("Cari"):
                 # Hitung kemiripan dengan 31.000 ayat
                 skor_kemiripan = cosine_similarity(vektor_tanya, vektor_seluruh_ayat)[0]
                 
-                # Ambil 3 ayat paling mirip
                 top_k = 3
                 indeks_teratas = np.argsort(skor_kemiripan)[::-1][:top_k]
                 
                 st.success(f"Ditemukan {top_k} ayat yang paling relevan!")
                 
-                # Tampilkan hasilnya untuk 3 versi Alkitab sekaligus
                 for idx in indeks_teratas:
                     baris = df_alkitab.iloc[idx]
                     skor = skor_kemiripan[idx]
