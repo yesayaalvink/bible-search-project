@@ -9,7 +9,7 @@ from sentence_transformers import SentenceTransformer  # Memuat model langsung d
 # ==========================================
 # 1. ATUR ALAMAT REPOSITORI HUGGING FACE
 # ==========================================
-REPO_ID = "YesayaAlvink/bible-search-project"
+REPO_ID = "YesayaAlvinK/bible-search-project"
 
 
 # ==========================================
@@ -20,13 +20,17 @@ def load_database():
     url_database = f"https://huggingface.co/{REPO_ID}/resolve/main/database_ta.pkl"
     local_filename = "database_ta.pkl"
     
-    # Mengunduh database secara bertahap agar hemat RAM
-    with requests.get(url_database, stream=True) as r:
-        r.raise_for_status()
-        with open(local_filename, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+    try:
+        # Mengunduh database secara bertahap agar hemat RAM
+        with requests.get(url_database, stream=True) as r:
+            r.raise_for_status()
+            with open(local_filename, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+    except requests.exceptions.HTTPError as err:
+        st.error(f"Gagal mengunduh database dari Hugging Face. Kode Status: {r.status_code}. URL: {url_database}")
+        raise err
                     
     with open(local_filename, "rb") as f:
         data = pickle.load(f)
@@ -56,7 +60,7 @@ def get_vektor_pertanyaan(pertanyaan):
         vektor = model.encode([pertanyaan])
         return np.array(vektor)
     except Exception as e:
-        st.error(f"Terjadi kesalahan: {repr(e)}. Silakan coba klik Cari lagi.")
+        st.error(f"Terjadi kesalahan saat memproses kalimat: {repr(e)}. Silakan coba klik Cari lagi.")
         return None
 
 
