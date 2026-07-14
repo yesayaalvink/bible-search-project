@@ -23,7 +23,7 @@ import requests
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
 
-# IMPORT LIBRARY RESMI GOOGLE GENAI SESUAI DOKUMENTASI GOOGLE AI STUDIO
+# IMPORT LIBRARY RESMI GOOGLE GENAI & TIPE KONFIGURASI
 from google import genai
 from google.genai import types
 
@@ -116,24 +116,10 @@ model = load_model()
 
 
 # ==========================================
-# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH - METODE TERBARU & CEPAT)
+# 4. GENERATOR HIERARKI RAG DENGAN SISTEM STREAMING
 # ==========================================
-def panggil_gemini_rag(prompt):
-    try:
-        # Menggunakan metode standar generate_content yang resmi dan bebas dari error Unmarshaller
-        response = client_gemini.models.generate_content(
-            model="gemini-3.5-flash",  # Model Flash resmi yang sangat cepat tanpa delay berpikir
-            contents=prompt
-        )
-        return response.text
-    except Exception as e:
-        # Mengembalikan string error asli agar bisa dibaca di layar
-        return f"ERROR_DETAIL: {repr(e)}"
 
-
-# ==========================================
-# 5. GENERATOR RAG CADANGAN (QWEN 1.5B -> MICROSOFT PHI-3)
-# ==========================================
+# AI 2 & 3 (Cadangan): Qwen / Mistral via Hugging Face Serverless
 def panggil_hf_model_rag(prompt, model_id):
     url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
     headers = {
@@ -154,9 +140,54 @@ def panggil_hf_model_rag(prompt, model_id):
     except Exception as e:
         return f"ERROR_DETAIL: {repr(e)}"
 
+# Fungsi Generator Utama untuk mensuplai teks streaming ke Streamlit
+def generate_rag_stream(prompt):
+    # --- 1. COBA AI UTAMA: GEMINI 3.5 FLASH (STREAMING) ---
+    try:
+        response_stream = client_gemini.models.generate_content_stream(
+            model="gemini-3.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=0  # Matikan proses penalaran/thinking agar instan & langsung streaming
+                )
+            )
+        )
+        for chunk in response_stream:
+            if chunk.text:
+                yield chunk.text
+        return  # Berhenti jika Gemini sukses
+    except Exception as e:
+        # Jika Gemini gagal, cetak peringatan inline dan lanjut ke AI Cadangan 1
+        yield f"\n\n*(⚠️ AI Utama Gemini gagal/limit. Detail: {repr(e)}. Menghubungi AI Cadangan 1...)*\n\n"
+        
+    # --- 2. COBA AI CADANGAN 1: LLAMA 3.2 3B (STABIL & SELALU AKTIF) ---
+    model_id_1 = "meta-llama/Llama-3.2-3B-Instruct"
+    try:
+        res_text = panggil_hf_model_rag(prompt, model_id_1)
+        if res_text and not res_text.startswith("ERROR_DETAIL"):
+            yield f"**[AI Cadangan 1 - Llama 3.2]:**\n\n{res_text}"
+            return  # Berhenti jika Llama sukses
+        else:
+            yield f"\n\n*(⚠️ AI Cadangan 1 gagal. Detail: {res_text}. Menghubungi AI Cadangan 2...)*\n\n"
+    except Exception as e:
+        yield f"\n\n*(⚠️ AI Cadangan 1 gagal. Detail: {repr(e)}. Menghubungi AI Cadangan 2...)*\n\n"
+        
+    # --- 3. COBA AI CADANGAN 2: MISTRAL 7B (PERTAHANAN TERAKHIR) ---
+    model_id_2 = "mistralai/Mistral-7B-Instruct-v0.3"
+    try:
+        res_text = panggil_hf_model_rag(prompt, model_id_2)
+        if res_text and not res_text.startswith("ERROR_DETAIL"):
+            yield f"**[AI Cadangan 2 - Mistral 7B]:**\n\n{res_text}"
+            return  # Berhenti jika Mistral sukses
+        else:
+            yield f"\n\n*(⚠️ Semua sistem AI cadangan gagal. Detail: {res_text})*\n\n"
+    except Exception as e:
+        yield f"\n\n*(⚠️ Semua sistem AI cadangan gagal. Detail: {repr(e)})*\n\n"
+
 
 # ==========================================
-# 6. PROSES MEMINTA VEKTOR DARI MODEL AI
+# 5. PROSES MEMINTA VEKTOR DARI MODEL AI
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
@@ -168,7 +199,7 @@ def get_vektor_pertanyaan(pertanyaan):
 
 
 # ==========================================
-# 7. TAMPILAN USER INTERFACE (UI)
+# 6. TAMPILAN USER INTERFACE (UI)
 # ==========================================
 st.set_page_config(page_title="Pencarian Semantik Alkitab", layout="wide")
 
@@ -223,7 +254,7 @@ st.write("Silakan gunakan tab di bawah ini untuk mengakses fitur yang berbeda.")
 tab1, tab2 = st.tabs(["🔍 Pencarian Semantik (Teks)", "🔄 Cari Ayat Serupa (Verse-to-Verse)"])
 
 # ------------------------------------------
-# TAB 1: PENCARIAN SEMANTIK + RAG HIERARKI
+# TAB 1: PENCARIAN SEMANTIK + RAG HIERARKI (STREAMING!)
 # ------------------------------------------
 with tab1:
     st.subheader("Cari Ayat Alkitab Berdasarkan Topik Makna Kalimat")
@@ -262,7 +293,7 @@ with tab1:
                                 st.markdown(f"**Versi Mudah Dibaca (VMD):**\n> {baris['teks_vmd']}")
                                 st.markdown(f"**Alkitab Yang Terbuka (AYT):**\n> {baris['teks_ayt']}")
                         
-                        # Jalankan RAG menggunakan Hierarki 3 AI
+                        # Jalankan RAG menggunakan Hierarki 3 AI (Streaming!)
                         st.markdown("---")
                         st.markdown("### 🤖 Analisis Teologis AI Generatif (RAG)")
                         
@@ -275,41 +306,9 @@ with tab1:
                             f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
                         )
                         
-                        # 1. Coba AI Utama (Gemini - Sangat Cepat!)
-                        success_rag = False
-                        with st.spinner("Menghubungi AI Utama (Gemini 3.5 flash)..."):
-                            analisis_rag = panggil_gemini_rag(prompt_rag)
-                            if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
-                                st.info(f"### 🤖 Analisis Teologis AI (Gemini 3.5 flash):\n\n{analisis_rag}")
-                                success_rag = True
-                            else:
-                                st.warning(f"⚠️ AI Utama (Gemini) Gagal. Detail: {analisis_rag}")
-                        
-                        # 2. Coba AI Cadangan 1 (Qwen 1.5B) jika Gemini gagal
-                        if not success_rag:
-                            st.warning("Menghubungi AI Cadangan 1 (Qwen 2.5 1.5B)...")
-                            with st.spinner("Menghubungi AI Cadangan 1 (Qwen 2.5 1.5B)..."):
-                                analisis_rag = panggil_hf_model_rag(prompt_rag, "Qwen/Qwen2.5-1.5B-Instruct")
-                                if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
-                                    st.info(f"### 🤖 Analisis Teologis AI (Qwen 2.5 1.5B):\n\n{analisis_rag}")
-                                    success_rag = True
-                                else:
-                                    st.warning(f"⚠️ AI Cadangan 1 (Qwen 2.5 1.5B) Gagal. Detail: {analisis_rag}")
-                                    
-                        # 3. Coba AI Cadangan 2 (Microsoft Phi-3) jika Qwen gagal
-                        if not success_rag:
-                            st.warning("Menghubungi AI Cadangan 2 (Microsoft Phi-3)...")
-                            with st.spinner("Menghubungi AI Cadangan 2 (Microsoft Phi-3)..."):
-                                analisis_rag = panggil_hf_model_rag(prompt_rag, "microsoft/Phi-3-mini-4k-instruct")
-                                if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
-                                    st.info(f"### 🤖 Analisis Teologis AI (Microsoft Phi-3):\n\n{analisis_rag}")
-                                    success_rag = True
-                                else:
-                                    st.warning(f"⚠️ AI Cadangan 2 (Microsoft Phi-3) Gagal. Detail: {analisis_rag}")
-                                    
-                        # 4. Jika semua gagal
-                        if not success_rag:
-                            st.error("⚠️ Semua sistem AI cadangan sedang sibuk/limit. Silakan coba klik Cari lagi.")
+                        # Jalankan proses streaming secara langsung di layar
+                        with st.spinner("Mempersiapkan saluran AI streaming..."):
+                            st.write_stream(generate_rag_stream(prompt_rag))
 
 # ------------------------------------------
 # TAB 2: CARI AYAT SERUPA (VERSE-TO-VERSE)
