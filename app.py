@@ -7,34 +7,30 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
 
 # ==========================================
-# 1. ATUR ALAMAT REPOSITORI HUGGING FACE
+# 1. ATUR ALAMAT REPOSITORI HUGGING FACE & GITHUB
 # ==========================================
 REPO_ID = "YesayaAlvinK/bible-search-project"
 
 
 # ==========================================
-# 2. PROSES MEMUAT DATABASE DARI CLOUD (MANDIRI)
+# 2. PROSES MEMUAT DATABASE DARI GITHUB RELEASES (BEBAS BLOKIR IP)
 # ==========================================
 @st.cache_resource
 def load_database():
-    url_database = f"https://huggingface.co/{REPO_ID}/resolve/main/database_ta.pkl"
+    # Mengunduh database dari GitHub Releases (Bebas blokir IP CDN, stabil, dan kencang)
+    url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0.0/database_ta.pkl"
     local_filename = "database_ta.pkl"
     
-    # Kita tambahkan User-Agent browser agar tidak diblokir oleh sistem keamanan Hugging Face
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    
     try:
-        # Mengunduh database menggunakan identitas browser palsu
-        with requests.get(url_database, headers=headers, stream=True) as r:
+        # Mengunduh database dari GitHub Releases
+        with requests.get(url_database, stream=True) as r:
             r.raise_for_status()
             with open(local_filename, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
     except requests.exceptions.HTTPError as err:
-        st.error(f"Gagal mengunduh database dari Hugging Face. Kode Status: {r.status_code}. URL: {url_database}")
+        st.error(f"Gagal mengunduh database dari GitHub Releases. Kode Status: {r.status_code}. URL: {url_database}")
         raise err
                     
     with open(local_filename, "rb") as f:
@@ -49,8 +45,7 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 # ==========================================
 @st.cache_resource
 def load_model():
-    # Mengunduh dan memuat model IndoBERT Anda langsung ke memori server Streamlit
-    # Ini hanya berjalan sekali saat aplikasi pertama kali dijalankan
+    # Server Streamlit bebas mendownload model secara native karena didukung HF Hub SDK resmi
     return SentenceTransformer(REPO_ID)
 
 model = load_model()
@@ -61,7 +56,6 @@ model = load_model()
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
-        # Memproses kata pencarian secara lokal di server Streamlit
         vektor = model.encode([pertanyaan])
         return np.array(vektor)
     except Exception as e:
