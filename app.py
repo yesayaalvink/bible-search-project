@@ -1,6 +1,18 @@
 import os
-# PENTING: Paksa matikan fitur Xet agar proses unduh model (498 MB) lancar tanpa stuck di server cloud
+# ==========================================
+# TRIK FINAL: BERSIHKAN SEMUA TOKEN DARI MEMORI SISTEM
+# ==========================================
+# Karena repositori Anda PUBLIC, kita WAJIB mematikan deteksi token otomatis
+# agar tidak memicu bug tanda tangan keamanan (Signature Error) Hugging Face.
+os.environ.pop("HF_TOKEN", None)
+os.environ.pop("HF_HUB_TOKEN", None)
+os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
+os.environ.pop("HUGGINGFACE_TOKEN", None)
+os.environ.pop("HUGGINGFACE_CO_TOKEN", None)
+
+# Matikan fitur Xet paralel dan paksa unduhan berjalan 100% anonim (stabil & kencang)
 os.environ["HF_HUB_DISABLE_XET"] = "1"
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 
 import streamlit as st
 import pandas as pd
@@ -22,7 +34,7 @@ REPO_ID = "YesayaAlvinK/bible-search-project"
 @st.cache_resource
 def load_database():
     # Mengunduh database dari GitHub Releases (Bebas blokir IP CDN, stabil, dan kencang)
-    url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0/database_ta.pkl"
+    url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0.0/database_ta.pkl"
     local_filename = "database_ta.pkl"
     
     try:
@@ -49,8 +61,8 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 # ==========================================
 @st.cache_resource
 def load_model():
-    # Mengunduh model IndoBERT Anda dari Hugging Face ke server Streamlit
-    # Karena di baris paling atas kita sudah mematikan Xet, unduhan 498 MB ini akan berjalan cepat dan lancar
+    # Mengunduh model IndoBERT Anda dari Hugging Face secara anonim
+    # Karena memori token sudah kita bersihkan di atas, proses ini akan berjalan lancar tanpa error Signature!
     return SentenceTransformer(REPO_ID)
 
 model = load_model()
