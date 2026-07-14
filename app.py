@@ -1,7 +1,14 @@
 import os
+import streamlit as st
+
 # ==========================================
-# TRIK FINAL: BERSIHKAN SEMUA TOKEN DARI MEMORI SISTEM
+# TRIK FINAL: AMBIL DAN BERSIHKAN TOKEN DARI MEMORI SISTEM
 # ==========================================
+# 1. Ambil nilai token secara aman dari Secrets sebelum memorinya dibersihkan
+HF_TOKEN_VAL = st.secrets.get("HF_TOKEN", "")
+GEMINI_API_KEY_VAL = st.secrets.get("GEMINI_API_KEY", "")
+
+# 2. Hapus token dari environment OS agar Hugging Face SDK tidak terganggu saat download
 os.environ.pop("HF_TOKEN", None)
 os.environ.pop("HF_HUB_TOKEN", None)
 os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
@@ -11,7 +18,6 @@ os.environ.pop("HUGGINGFACE_CO_TOKEN", None)
 os.environ["HF_HUB_DISABLE_XET"] = "1"
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 
-import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
@@ -19,19 +25,16 @@ import requests
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
 
-# IMPORT LIBRARY RESMI GOOGLE GENAI
+# IMPOR LIBRARY RESMI GOOGLE GENAI
 from google import genai
 
 # ==========================================
-# 1. ATUR ALAMAT REPOSITORI & API GEMINI
+# 1. ATUR ALAMAT REPOSITORI
 # ==========================================
 REPO_ID = "YesayaAlvinK/bible-search-project"
 
-# API Key Baru Anda yang sudah terverifikasi aktif
-GEMINI_API_KEY = "AQ.Ab8RN6L93mL4H_7FEw90PvUcCWVLFpG4I6e2wJTp821cF-IOQw"
-
-# Inisialisasi Google GenAI Client resmi menggunakan API Key Baru
-client_gemini = genai.Client(api_key=GEMINI_API_KEY)
+# Inisialisasi Google GenAI Client menggunakan token rahasia dari Secrets
+client_gemini = genai.Client(api_key=GEMINI_API_KEY_VAL)
 
 
 # ==========================================
@@ -114,51 +117,39 @@ model = load_model()
 
 
 # ==========================================
-# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH - GOOGLE GENAI SDK)
+# 4. FUNGSI GENERATOR RAG HIERARKI (GEMINI -> QWEN -> LLAMA)
 # ==========================================
-def panggil_gemini_rag(query, daftar_ayat):
-    konteks_ayat = ""
-    for i, baris in enumerate(daftar_ayat):
-        konteks_ayat += f"\n{i+1}. {baris['kitab']} {baris['pasal']}:{baris['ayat']} -> {baris['teks_tb']}"
-        
-    prompt = (
-        f"Anda adalah seorang asisten Teologi Kristen yang ahli dalam penafsiran Alkitab. "
-        f"Pengguna sedang mencari topik: '{query}'.\n\n"
-        f"Berikut adalah 3 ayat relevan yang ditemukan dari Alkitab:\n{konteks_ayat}\n\n"
-        f"Berikan penjelasan singkat teologis (maksimal 3-4 kalimat) dalam bahasa Indonesia, "
-        f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
-    )
-    
+
+# AI 1 (Utama): Google Gemini 3.5 Flash
+def panggil_gemini_rag(prompt):
     try:
-        # Menggunakan pustaka resmi google-genai
         interaction = client_gemini.interactions.create(
             model="gemini-3.5-flash",
             input=prompt
         )
         return interaction.output_text
     except Exception:
-        # Menghindari crash jika API Key bermasalah, akan mengembalikan None
         return None
 
-
-# ==========================================
-# 4B. AI PENGAMAN CADANGAN (RULE-BASED SEMANTIC GENERATOR)
-# ==========================================
-# Berjalan secara lokal di server Streamlit jika Gemini sedang bermasalah
-def panggil_lokal_pengaman(query, daftar_ayat):
-    if len(daftar_ayat) < 3:
-        return "Sistem sedang mengumpulkan data yang cukup untuk analisis."
-        
-    v1, v2, v3 = daftar_ayat[0], daftar_ayat[1], daftar_ayat[2]
-    
-    analisis = (
-        f"Pencarian Anda mengenai topik **\"{query}\"** memiliki korelasi teologis yang sangat mendalam dengan ayat-ayat di atas. "
-        f"Secara khusus, kitab **{v1['kitab']} {v1['pasal']}:{v1['ayat']}** menekankan dasar utama dari pengajaran ini. "
-        f"Makna teologis tersebut kemudian diperkuat dan dilaraskan oleh konteks penulisan pada kitab **{v2['kitab']} {v2['pasal']}:{v2['ayat']}** serta kitab **{v3['kitab']} {v3['pasal']}:{v3['ayat']}**.\n\n"
-        f"Secara keseluruhan, pesan Alkitabiah ini menuntun kita untuk merefleksikan pentingnya memahami tema **\"{query}\"** "
-        f"sebagai bagian dari rencana dan pengajaran ilahi yang utuh di seluruh Alkitab."
-    )
-    return analisis
+# AI 2 & 3 (Cadangan): Qwen 2.5 / Llama 3 via Hugging Face Serverless
+def panggil_hf_model_rag(prompt, model_id):
+    url = f"https://router.huggingface.co/hf-inference/models/{model_id}/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN_VAL}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 150
+    }
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=8)
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+        return None
+    except Exception:
+        return None
 
 
 # ==========================================
@@ -229,7 +220,7 @@ st.write("Silakan gunakan tab di bawah ini untuk mengakses fitur yang berbeda.")
 tab1, tab2 = st.tabs(["🔍 Pencarian Semantik (Teks)", "🔄 Cari Ayat Serupa (Verse-to-Verse)"])
 
 # ------------------------------------------
-# TAB 1: PENCARIAN SEMANTIK + RAG GEMINI
+# TAB 1: PENCARIAN SEMANTIK + RAG HIERARKI
 # ------------------------------------------
 with tab1:
     st.subheader("Cari Ayat Alkitab Berdasarkan Topik Makna Kalimat")
@@ -256,28 +247,60 @@ with tab1:
                         
                         # Tampilkan hasil ayat
                         daftar_ayat_terpilih = []
+                        konteks_ayat = ""
                         for idx in indeks_teratas:
                             baris = df_tersaring.iloc[idx]
                             skor = skor_kemiripan[idx]
                             daftar_ayat_terpilih.append(baris)
+                            konteks_ayat += f"\n- {baris['kitab']} {baris['pasal']}:{baris['ayat']} -> {baris['teks_tb']}"
                             
                             with st.expander(f"📍 {baris['kitab']} {baris['pasal']}:{baris['ayat']} (Tingkat Kemiripan: {skor:.2f})", expanded=True):
                                 st.markdown(f"**Terjemahan Baru (TB):**\n> {baris['teks_tb']}")
                                 st.markdown(f"**Versi Mudah Dibaca (VMD):**\n> {baris['teks_vmd']}")
                                 st.markdown(f"**Alkitab Yang Terbuka (AYT):**\n> {baris['teks_ayt']}")
                         
-                        # Jalankan RAG menggunakan Gemini
+                        # Jalankan RAG menggunakan Hierarki 3 AI
                         st.markdown("---")
                         st.markdown("### 🤖 Analisis Teologis AI Generatif (RAG)")
-                        with st.spinner("Menghubungi AI Gemini untuk membuat kesimpulan analisis..."):
-                            analisis_rag = panggil_gemini_rag(pertanyaan, daftar_ayat_terpilih)
+                        
+                        # Susun prompt untuk RAG
+                        prompt_rag = (
+                            f"Anda adalah seorang asisten Teologi Kristen yang ahli dalam penafsiran Alkitab. "
+                            f"Pengguna sedang mencari topik: '{pertanyaan}'.\n\n"
+                            f"Berikut adalah 3 ayat relevan yang ditemukan dari Alkitab:\n{konteks_ayat}\n\n"
+                            f"Berikan penjelasan singkat teologis (maksimal 3-4 kalimat) dalam bahasa Indonesia, "
+                            f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
+                        )
+                        
+                        # 1. Coba AI Utama (Gemini)
+                        success_rag = False
+                        with st.spinner("Menghubungi AI Utama (Gemini 3.5 Flash)..."):
+                            analisis_rag = panggil_gemini_rag(prompt_rag)
                             if analisis_rag:
-                                st.info(analisis_rag)
-                            else:
-                                # JIKA GEMINI GAGAL: Panggil sistem cadangan lokal secara instan!
-                                analisis_cadangan = panggil_lokal_pengaman(pertanyaan, daftar_ayat_terpilih)
-                                st.info(analisis_cadangan)
-                                st.warning("⚠️ Catatan: Server utama Gemini sedang sibuk. Analisis di atas dihasilkan secara otomatis oleh Sistem Cadangan Lokal (Rule-Based).")
+                                st.info(f"### 🤖 Analisis Teologis AI (Gemini 3.5 Flash):\n\n{analisis_rag}")
+                                success_rag = True
+                        
+                        # 2. Coba AI Cadangan (Qwen) jika Gemini gagal
+                        if not success_rag:
+                            st.warning("⚠️ AI Utama (Gemini) sedang sibuk/limit. Menghubungi AI Cadangan (Qwen 2.5)...")
+                            with st.spinner("Menghubungi AI Cadangan (Qwen 2.5)..."):
+                                analisis_rag = panggil_hf_model_rag(prompt_rag, "Qwen/Qwen2.5-7B-Instruct")
+                                if analisis_rag:
+                                    st.info(f"### 🤖 Analisis Teologis AI (Qwen 2.5):\n\n{analisis_rag}")
+                                    success_rag = True
+                                    
+                        # 3. Coba AI Cadangan Darurat (Llama) jika Qwen gagal
+                        if not success_rag:
+                            st.warning("⚠️ AI Cadangan (Qwen 2.5) sedang sibuk. Menghubungi AI Cadangan Darurat (Llama 3)...")
+                            with st.spinner("Menghubungi AI Cadangan Darurat (Llama 3)..."):
+                                analisis_rag = panggil_hf_model_rag(prompt_rag, "meta-llama/Meta-Llama-3-8B-Instruct")
+                                if analisis_rag:
+                                    st.info(f"### 🤖 Analisis Teologis AI (Llama 3):\n\n{analisis_rag}")
+                                    success_rag = True
+                                    
+                        # 4. Jika semua gagal
+                        if not success_rag:
+                            st.error("⚠️ Semua sistem AI cadangan sedang sibuk/limit. Silakan coba klik Cari lagi.")
 
 # ------------------------------------------
 # TAB 2: CARI AYAT SERUPA (VERSE-TO-VERSE)
