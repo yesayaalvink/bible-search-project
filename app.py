@@ -40,7 +40,7 @@ def get_vektor_pertanyaan(pertanyaan):
         )
         return np.array(embedding)
     except Exception as e:
-        st.error(f"Gagal memproses kalimat: {e}. Silakan tunggu beberapa saat lalu coba klik Cari lagi.")
+        st.error(f"Gagal memproses kalimat: {repr(e)}. Silakan tunggu beberapa saat lalu coba klik Cari lagi.")
         return None
 
 # 3. Tampilan Aplikasi
