@@ -23,9 +23,9 @@ import requests
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
 
-# IMPORT LIBRARY RESMI GOOGLE GENAI & TIPE KONFIGURASI
+# IMPORT LIBRARY RESMI GOOGLE GENAI SESUAI DOKUMENTASI GOOGLE AI STUDIO
 from google import genai
-from google.genai import types  # <--- Ditambahkan untuk mengatur tingkat berpikir AI
+from google.genai import types
 
 # ==========================================
 # 1. ATUR ALAMAT REPOSITORI & API GEMINI
@@ -116,27 +116,23 @@ model = load_model()
 
 
 # ==========================================
-# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH)
+# 4. FUNGSI RAG GENERATOR (GEMINI 2.5 FLASH - METODE TERBARU & CEPAT)
 # ==========================================
 def panggil_gemini_rag(prompt):
     try:
-        interaction = client_gemini.interactions.create(
-            model="gemini-3.5-flash",
-            input=prompt,
-            generation_config=types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(
-                    thinking_level="minimal"  # Langsung menjawab tanpa lama berpikir
-                )
-            )
+        # Menggunakan metode standar generate_content yang resmi dan bebas dari error Unmarshaller
+        response = client_gemini.models.generate_content(
+            model="gemini-2.5-flash",  # Model Flash resmi yang sangat cepat tanpa delay berpikir
+            contents=prompt
         )
-        return interaction.output_text
+        return response.text
     except Exception as e:
         # Mengembalikan string error asli agar bisa dibaca di layar
         return f"ERROR_DETAIL: {repr(e)}"
 
 
 # ==========================================
-# 5. GENERATOR RAG CADANGAN (QWEN -> LLAMA)
+# 5. GENERATOR RAG CADANGAN (QWEN 1.5B -> MICROSOFT PHI-3)
 # ==========================================
 def panggil_hf_model_rag(prompt, model_id):
     url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
@@ -281,35 +277,35 @@ with tab1:
                         
                         # 1. Coba AI Utama (Gemini - Sangat Cepat!)
                         success_rag = False
-                        with st.spinner("Menghubungi AI Utama (Gemini 3.5 Flash)..."):
+                        with st.spinner("Menghubungi AI Utama (Gemini 2.5 Flash)..."):
                             analisis_rag = panggil_gemini_rag(prompt_rag)
                             if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
-                                st.info(f"### 🤖 Analisis Teologis AI (Gemini 3.5 Flash):\n\n{analisis_rag}")
+                                st.info(f"### 🤖 Analisis Teologis AI (Gemini 2.5 Flash):\n\n{analisis_rag}")
                                 success_rag = True
                             else:
                                 st.warning(f"⚠️ AI Utama (Gemini) Gagal. Detail: {analisis_rag}")
                         
-                        # 2. Coba AI Cadangan (Qwen) jika Gemini gagal
+                        # 2. Coba AI Cadangan 1 (Qwen 1.5B) jika Gemini gagal
                         if not success_rag:
-                            st.warning("Menghubungi AI Cadangan (Qwen 2.5)...")
-                            with st.spinner("Menghubungi AI Cadangan (Qwen 2.5)..."):
-                                analisis_rag = panggil_hf_model_rag(prompt_rag, "Qwen/Qwen2.5-7B-Instruct")
+                            st.warning("Menghubungi AI Cadangan 1 (Qwen 2.5 1.5B)...")
+                            with st.spinner("Menghubungi AI Cadangan 1 (Qwen 2.5 1.5B)..."):
+                                analisis_rag = panggil_hf_model_rag(prompt_rag, "Qwen/Qwen2.5-1.5B-Instruct")
                                 if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
-                                    st.info(f"### 🤖 Analisis Teologis AI (Qwen 2.5):\n\n{analisis_rag}")
+                                    st.info(f"### 🤖 Analisis Teologis AI (Qwen 2.5 1.5B):\n\n{analisis_rag}")
                                     success_rag = True
                                 else:
-                                    st.warning(f"⚠️ AI Cadangan (Qwen 2.5) Gagal. Detail: {analisis_rag}")
+                                    st.warning(f"⚠️ AI Cadangan 1 (Qwen 2.5 1.5B) Gagal. Detail: {analisis_rag}")
                                     
-                        # 3. Coba AI Cadangan Darurat (Llama) jika Qwen gagal
+                        # 3. Coba AI Cadangan 2 (Microsoft Phi-3) jika Qwen gagal
                         if not success_rag:
-                            st.warning("Menghubungi AI Cadangan Darurat (Llama 3)...")
-                            with st.spinner("Menghubungi AI Cadangan Darurat (Llama 3)..."):
-                                analisis_rag = panggil_hf_model_rag(prompt_rag, "meta-llama/Meta-Llama-3-8B-Instruct")
+                            st.warning("Menghubungi AI Cadangan 2 (Microsoft Phi-3)...")
+                            with st.spinner("Menghubungi AI Cadangan 2 (Microsoft Phi-3)..."):
+                                analisis_rag = panggil_hf_model_rag(prompt_rag, "microsoft/Phi-3-mini-4k-instruct")
                                 if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
-                                    st.info(f"### 🤖 Analisis Teologis AI (Llama 3):\n\n{analisis_rag}")
+                                    st.info(f"### 🤖 Analisis Teologis AI (Microsoft Phi-3):\n\n{analisis_rag}")
                                     success_rag = True
                                 else:
-                                    st.warning(f"⚠️ AI Cadangan Darurat (Llama 3) Gagal. Detail: {analisis_rag}")
+                                    st.warning(f"⚠️ AI Cadangan 2 (Microsoft Phi-3) Gagal. Detail: {analisis_rag}")
                                     
                         # 4. Jika semua gagal
                         if not success_rag:
