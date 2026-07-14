@@ -1,14 +1,7 @@
 import os
-import streamlit as st
-
 # ==========================================
-# TRIK FINAL: AMBIL DAN BERSIHKAN TOKEN DARI MEMORI SISTEM
+# TRIK FINAL: BERSIHKAN SEMUA TOKEN DARI MEMORI SISTEM
 # ==========================================
-# 1. Ambil nilai token secara aman dari Secrets sebelum memorinya dibersihkan
-HF_TOKEN_VAL = st.secrets.get("HF_TOKEN", "")
-GEMINI_API_KEY_VAL = st.secrets.get("GEMINI_API_KEY", "")
-
-# 2. Hapus token dari environment OS agar Hugging Face SDK tidak terganggu saat download
 os.environ.pop("HF_TOKEN", None)
 os.environ.pop("HF_HUB_TOKEN", None)
 os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
@@ -18,6 +11,7 @@ os.environ.pop("HUGGINGFACE_CO_TOKEN", None)
 os.environ["HF_HUB_DISABLE_XET"] = "1"
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 
+import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
@@ -25,16 +19,20 @@ import requests
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
 
-# IMPOR LIBRARY RESMI GOOGLE GENAI
+# IMPORT LIBRARY RESMI GOOGLE GENAI & TIPE KONFIGURASI
 from google import genai
+from google.genai import types  # <--- Ditambahkan untuk mengatur tingkat berpikir AI
 
 # ==========================================
-# 1. ATUR ALAMAT REPOSITORI
+# 1. ATUR ALAMAT REPOSITORI & API GEMINI
 # ==========================================
 REPO_ID = "YesayaAlvinK/bible-search-project"
 
-# Inisialisasi Google GenAI Client menggunakan token rahasia dari Secrets
-client_gemini = genai.Client(api_key=GEMINI_API_KEY_VAL)
+# API Key Gemini Google AI Studio Anda
+GEMINI_API_KEY = "AQ.Ab8RN6L93mL4H_7FEw90PvUcCWVLFpG4I6e2wJTp821cF-IOQw"
+
+# Inisialisasi Google GenAI Client resmi menggunakan API Key Anda
+client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ==========================================
@@ -117,21 +115,41 @@ model = load_model()
 
 
 # ==========================================
-# 4. FUNGSI GENERATOR RAG HIERARKI (GEMINI -> QWEN -> LLAMA)
+# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH - GOOGLE GENAI SDK)
 # ==========================================
-
-# AI 1 (Utama): Google Gemini 3.5 Flash
-def panggil_gemini_rag(prompt):
+def panggil_gemini_rag(query, daftar_ayat):
+    konteks_ayat = ""
+    for i, baris in enumerate(daftar_ayat):
+        konteks_ayat += f"\n{i+1}. {baris['kitab']} {baris['pasal']}:{baris['ayat']} -> {baris['teks_tb']}"
+        
+    prompt = (
+        f"Anda adalah seorang asisten Teologi Kristen yang ahli dalam penafsiran Alkitab. "
+        f"Pengguna sedang mencari topik: '{query}'.\n\n"
+        f"Berikut adalah 3 ayat relevan yang ditemukan dari Alkitab:\n{konteks_ayat}\n\n"
+        f"Berikan penjelasan singkat teologis (maksimal 3-4 kalimat) dalam bahasa Indonesia, "
+        f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
+    )
+    
     try:
+        # Menggunakan pustaka resmi google-genai dengan memotong waktu berpikir AI menjadi minimal
         interaction = client_gemini.interactions.create(
             model="gemini-3.5-flash",
-            input=prompt
+            input=prompt,
+            generation_config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(
+                    thinking_level="minimal"  # <--- Memaksa AI langsung menjawab tanpa membuang waktu berpikir
+                )
+            )
         )
         return interaction.output_text
     except Exception:
+        # Menghindari crash jika API Key bermasalah, akan memicu peringatan warning teologis
         return None
 
-# AI 2 & 3 (Cadangan): Qwen 2.5 / Llama 3 via Hugging Face Serverless
+
+# ==========================================
+# 5. GENERATOR RAG CADANGAN (QWEN -> LLAMA)
+# ==========================================
 def panggil_hf_model_rag(prompt, model_id):
     url = f"https://router.huggingface.co/hf-inference/models/{model_id}/v1/chat/completions"
     headers = {
@@ -153,7 +171,7 @@ def panggil_hf_model_rag(prompt, model_id):
 
 
 # ==========================================
-# 5. PROSES MEMINTA VEKTOR DARI MODEL AI
+# 6. PROSES MEMINTA VEKTOR DARI MODEL AI
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
@@ -165,7 +183,7 @@ def get_vektor_pertanyaan(pertanyaan):
 
 
 # ==========================================
-# 6. TAMPILAN USER INTERFACE (UI)
+# 7. TAMPILAN USER INTERFACE (UI)
 # ==========================================
 st.set_page_config(page_title="Pencarian Semantik Alkitab", layout="wide")
 
@@ -272,7 +290,7 @@ with tab1:
                             f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
                         )
                         
-                        # 1. Coba AI Utama (Gemini)
+                        # 1. Coba AI Utama (Gemini - Sangat Cepat!)
                         success_rag = False
                         with st.spinner("Menghubungi AI Utama (Gemini 3.5 Flash)..."):
                             analisis_rag = panggil_gemini_rag(prompt_rag)
