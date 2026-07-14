@@ -2,20 +2,31 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+import requests
 from sklearn.metrics.pairwise import cosine_similarity
-from huggingface_hub import hf_hub_download, InferenceClient  # <--- Ditambahkan InferenceClient resmi
+from huggingface_hub import hf_hub_download
 
 # GANTI DENGAN DETAIL AKUN HUGGING FACE ANDA
 NAMA_AKUN_HF = "YesayaAlvink" 
 NAMA_MODEL_HF = "bible-search-project"  # Sesuaikan dengan nama model Anda di Hugging Face
 HF_TOKEN = st.secrets["HF_TOKEN"] 
 
-# Inisialisasi client resmi Hugging Face
-client = InferenceClient(token=HF_TOKEN)
+API_URL = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{NAMA_AKUN_HF}/{NAMA_MODEL_HF}"
+
+# Fungsi untuk meminta AI di Hugging Face membaca pertanyaan dosen
+def get_vektor_pertanyaan(pertanyaan):
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    response = requests.post(API_URL, headers=headers, json={"inputs": pertanyaan})
+    if response.status_code == 200:
+        return np.array(response.json())
+    else:
+        st.error("Tunggu sebentar ya, AI sedang pemanasan (loading)... Silakan klik Cari lagi dalam 10 detik.")
+        return None
 
 # 2. Otomatis mengunduh database_ta.pkl dari Hugging Face ke server Streamlit
 @st.cache_resource
 def load_database():
+    # Mengunduh file dari Hugging Face secara aman
     file_path = hf_hub_download(
         repo_id=f"{NAMA_AKUN_HF}/{NAMA_MODEL_HF}",
         filename="database_ta.pkl",
@@ -26,19 +37,6 @@ def load_database():
     return data["tabel_ayat"], data["vektor_ayat"]
 
 df_alkitab, vektor_seluruh_ayat = load_database()
-
-# Fungsi baru untuk meminta vektor dari Hugging Face secara resmi lewat router terbaru
-def get_vektor_pertanyaan(pertanyaan):
-    try:
-        # Menggunakan pustaka resmi InferenceClient agar otomatis ditangani oleh server terbaru
-        embedding = client.feature_extraction(
-            pertanyaan, 
-            model=f"{NAMA_AKUN_HF}/{NAMA_MODEL_HF}"
-        )
-        return np.array(embedding)
-    except Exception as e:
-        st.error(f"Gagal memproses kalimat: {e}. Silakan tunggu beberapa saat lalu coba klik Cari lagi.")
-        return None
 
 # 3. Tampilan Aplikasi
 st.title("Pencarian Semantik Alkitab (IndoBERT)")
