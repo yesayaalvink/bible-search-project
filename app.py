@@ -116,13 +116,13 @@ model = load_model()
 
 
 # ==========================================
-# 4. FUNGSI RAG GENERATOR (GEMINI 2.5 FLASH - METODE TERBARU & CEPAT)
+# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH - METODE TERBARU & CEPAT)
 # ==========================================
 def panggil_gemini_rag(prompt):
     try:
         # Menggunakan metode standar generate_content yang resmi dan bebas dari error Unmarshaller
         response = client_gemini.models.generate_content(
-            model="gemini-2.5-flash",  # Model Flash resmi yang sangat cepat tanpa delay berpikir
+            model="gemini-3.5-flash",  # Model Flash resmi yang sangat cepat tanpa delay berpikir
             contents=prompt
         )
         return response.text
@@ -277,10 +277,10 @@ with tab1:
                         
                         # 1. Coba AI Utama (Gemini - Sangat Cepat!)
                         success_rag = False
-                        with st.spinner("Menghubungi AI Utama (Gemini 2.5 Flash)..."):
+                        with st.spinner("Menghubungi AI Utama (Gemini 3.5 flash)..."):
                             analisis_rag = panggil_gemini_rag(prompt_rag)
                             if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
-                                st.info(f"### 🤖 Analisis Teologis AI (Gemini 2.5 Flash):\n\n{analisis_rag}")
+                                st.info(f"### 🤖 Analisis Teologis AI (Gemini 3.5 flash):\n\n{analisis_rag}")
                                 success_rag = True
                             else:
                                 st.warning(f"⚠️ AI Utama (Gemini) Gagal. Detail: {analisis_rag}")
