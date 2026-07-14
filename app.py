@@ -6,16 +6,20 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
-import requests  # Menggunakan library requests standar untuk menghindari bug HuggingFace
+import requests  # Menggunakan requests standar untuk menghindari bug routing HF
 from sklearn.metrics.pairwise import cosine_similarity
 from huggingface_hub import hf_hub_download
 
 # ==========================================
 # 1. ATUR ALAMAT REPOSITORI HUGGING FACE
 # ==========================================
+# Menggunakan repositori tunggal milik akun Anda
 REPO_ID = "YesayaAlvink/bible-search-project"
 
-# URL langsung untuk mengakses model tanpa lewat sistem router yang bug
+# Token rahasia Anda untuk memproses pencarian lewat API
+HF_TOKEN = st.secrets["HF_TOKEN"] 
+
+# URL langsung untuk mengakses model tanpa lewat sistem router yang bermasalah
 API_URL = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{REPO_ID}"
 
 
