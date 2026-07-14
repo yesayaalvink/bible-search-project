@@ -1,5 +1,16 @@
 import os
-import json
+# ==========================================
+# TRIK FINAL: BERSIHKAN SEMUA TOKEN DARI MEMORI SISTEM
+# ==========================================
+os.environ.pop("HF_TOKEN", None)
+os.environ.pop("HF_HUB_TOKEN", None)
+os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
+os.environ.pop("HUGGINGFACE_TOKEN", None)
+os.environ.pop("HUGGINGFACE_CO_TOKEN", None)
+
+os.environ["HF_HUB_DISABLE_XET"] = "1"
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,12 +18,14 @@ import pickle
 import requests
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
-import plotly.express as px  # Library grafik interaktif
 
 # ==========================================
-# 1. ATUR ALAMAT REPOSITORI GITHUB
+# 1. ATUR ALAMAT REPOSITORI & API GEMINI
 # ==========================================
 REPO_ID = "YesayaAlvinK/bible-search-project"
+
+# API Key Gemini yang Anda berikan
+GEMINI_API_KEY = "AQ.Ab8RN6JFM4jr8p93BhwgbJB_nj5L_W5UaWQTl3wabtoww3a6cg"
 
 
 # ==========================================
@@ -72,6 +85,7 @@ def load_model():
                             if chunk:
                                 f.write(chunk)
                                 
+        import json
         pooling_config_path = os.path.join(model_dir, "1_Pooling", "config.json")
         if not os.path.exists(pooling_config_path):
             pooling_data = {
@@ -94,18 +108,41 @@ model = load_model()
 
 
 # ==========================================
-# 4. HITUNG PROYEKSI KOORDINAT 2D (PCA) SECARA CACHED
+# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH)
 # ==========================================
-@st.cache_resource
-def hitung_proyeksi_pca(vektor_ayat):
-    from sklearn.decomposition import PCA
-    pca_model = PCA(n_components=2)
-    koordinat_2d = pca_model.fit_transform(vektor_ayat)
-    return koordinat_2d, pca_model
-
-koordinat_2d, pca_model = hitung_proyeksi_pca(vektor_seluruh_ayat)
-df_alkitab['x'] = koordinat_2d[:, 0]
-df_alkitab['y'] = koordinat_2d[:, 1]
+def panggil_gemini_rag(query, daftar_ayat):
+    # Menyusun teks ayat sebagai konteks untuk dikirim ke Gemini
+    konteks_ayat = ""
+    for i, baris in enumerate(daftar_ayat):
+        konteks_ayat += f"\n{i+1}. {baris['kitab']} {baris['pasal']}:{baris['ayat']} -> {baris['teks_tb']}"
+        
+    prompt = (
+        f"Anda adalah seorang asisten Teologi Kristen yang ahli dalam penafsiran Alkitab. "
+        f"Pengguna sedang mencari topik: '{query}'.\n\n"
+        f"Berikut adalah 3 ayat relevan yang ditemukan dari Alkitab:\n{konteks_ayat}\n\n"
+        f"Berikan penjelasan singkat teologis (maksimal 3-4 kalimat) dalam bahasa Indonesia, "
+        f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
+    )
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=8)
+        if response.status_code == 200:
+            hasil = response.json()
+            # Ekstrak teks balasan dari struktur respon resmi Gemini
+            teks_analisis = hasil['contents'][0]['parts'][0]['text']
+            return teks_analisis
+        else:
+            return None
+    except Exception:
+        return None
 
 
 # ==========================================
@@ -116,7 +153,7 @@ def get_vektor_pertanyaan(pertanyaan):
         vektor = model.encode([pertanyaan])
         return np.array(vektor)
     except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses kalimat: {repr(e)}. Silakan coba klik Cari lagi.")
+        st.error(f"Terjadi kesalahan saat memproses kalimat: {repr(e)}")
         return None
 
 
@@ -124,37 +161,30 @@ def get_vektor_pertanyaan(pertanyaan):
 # 6. TAMPILAN USER INTERFACE (UI)
 # ==========================================
 st.set_page_config(page_title="Pencarian Semantik Alkitab", layout="wide")
-st.title("📖 Pencarian Semantik Alkitab (IndoBERT)")
-st.write("Cari ayat berdasarkan makna cerita, bukan sekadar kata kunci.")
 
-# --- BARIS FILTER DROP-DOWN ---
-st.markdown("### 🔍 Penyaringan Metadata (Opsional)")
-col1, col2 = st.columns(2)
+# --- SIDEBAR (PANE SAMPING) UNTUK FILTERING ---
+st.sidebar.title("📖 Filter Alkitab Global")
+st.sidebar.write("Penyaringan ini otomatis berlaku untuk kedua fitur pencarian.")
 
-# Mengambil urutan kitab unik untuk membagi PL dan PB secara dinamis
 kitab_unik = list(df_alkitab['kitab'].unique())
 kitab_pl = kitab_unik[:39]
 kitab_pb = kitab_unik[39:]
 
-with col1:
-    perjanjian_filter = st.selectbox(
-        "Pilih Bagian Alkitab:", 
-        ["Seluruh Alkitab", "Perjanjian Lama (PL)", "Perjanjian Baru (PB)"]
-    )
+perjanjian_filter = st.sidebar.selectbox(
+    "Pilih Perjanjian:", 
+    ["Seluruh Alkitab", "Perjanjian Lama (PL)", "Perjanjian Baru (PB)"]
+)
 
-with col2:
-    if perjanjian_filter == "Perjanjian Lama (PL)":
-        pilihan_kitab = ["Semua Kitab PL"] + kitab_pl
-    elif perjanjian_filter == "Perjanjian Baru (PB)":
-        pilihan_kitab = ["Semua Kitab PB"] + kitab_pb
-    else:
-        pilihan_kitab = ["Semua Kitab"] + kitab_unik
-        
-    kitab_filter = st.selectbox("Pilih Kitab Spesifik:", pilihan_kitab)
+if perjanjian_filter == "Perjanjian Lama (PL)":
+    pilihan_kitab = ["Semua Kitab PL"] + kitab_pl
+elif perjanjian_filter == "Perjanjian Baru (PB)":
+    pilihan_kitab = ["Semua Kitab PB"] + kitab_pb
+else:
+    pilihan_kitab = ["Semua Kitab"] + kitab_unik
+    
+kitab_filter = st.sidebar.selectbox("Pilih Kitab Spesifik:", pilihan_kitab)
 
-st.markdown("---")
-
-# Mempersiapkan mask penyaringan data
+# Mempersiapkan mask penyaringan data secara global
 if perjanjian_filter == "Perjanjian Lama (PL)":
     if kitab_filter == "Semua Kitab PL":
         mask_filter = df_alkitab['kitab'].isin(kitab_pl)
@@ -171,87 +201,118 @@ else:
     else:
         mask_filter = df_alkitab['kitab'] == kitab_filter
 
-# Menyaring DataFrame dan vektor sesuai pilihan drop-down
+# Data tersaring secara global
 df_tersaring = df_alkitab[mask_filter].reset_index(drop=True)
 vektor_tersaring = vektor_seluruh_ayat[mask_filter.values]
 
-# --- KOLOM UTAMA PENCARIAN & GRAFIK ---
-pertanyaan = st.text_input("Masukkan pencarian makna cerita:", placeholder="Contoh: Daniel dilemparkan ke singa")
 
-if st.button("Mulai Cari"):
-    if pertanyaan:
-        with st.spinner("AI sedang memproses pencarian dan peta kluster matematika..."):
-            vektor_tanya = get_vektor_pertanyaan(pertanyaan)
-            
-            if vektor_tanya is not None:
-                # Menghitung kemiripan semantik
-                if len(vektor_tanya.shape) == 1:
-                    vektor_tanya = vektor_tanya.reshape(1, -1)
-                elif len(vektor_tanya.shape) == 3:
-                    vektor_tanya = vektor_tanya[0][0].reshape(1, -1)
-                    
-                skor_kemiripan = cosine_similarity(vektor_tanya, vektor_tersaring)[0]
+# --- TAMPILAN TAB UTAMA ---
+st.title("📖 Sistem Pencarian Semantik Alkitab (IndoBERT)")
+st.write("Silakan gunakan tab di bawah ini untuk mengakses fitur yang berbeda.")
+
+tab1, tab2 = st.tabs(["🔍 Pencarian Semantik (Teks)", "🔄 Cari Ayat Serupa (Verse-to-Verse)"])
+
+# ------------------------------------------
+# TAB 1: PENCARIAN SEMANTIK + RAG GEMINI
+# ------------------------------------------
+with tab1:
+    st.subheader("Cari Ayat Alkitab Berdasarkan Topik Makna Kalimat")
+    pertanyaan = st.text_input("Masukkan pencarian makna cerita:", placeholder="Contoh: kasih tuhan kepada manusia")
+
+    if st.button("Mulai Cari", key="btn_pencarian"):
+        if pertanyaan:
+            with st.spinner("AI sedang mencocokkan makna ayat teologis..."):
+                vektor_tanya = get_vektor_pertanyaan(pertanyaan)
                 
-                top_k = min(3, len(df_tersaring))
-                if top_k == 0:
-                    st.warning("Tidak ada ayat yang cocok dengan filter yang Anda pilih.")
-                else:
-                    indeks_teratas = np.argsort(skor_kemiripan)[::-1][:top_k]
+                if vektor_tanya is not None:
+                    if len(vektor_tanya.shape) == 1:
+                        vektor_tanya = vektor_tanya.reshape(1, -1)
+                        
+                    skor_kemiripan = cosine_similarity(vektor_tanya, vektor_tersaring)[0]
                     
-                    # Layout Kolom Kiri (Hasil) dan Kolom Kanan (Grafik Visualisasi)
-                    kol_hasil, col_grafik = st.columns([1.1, 1])
-                    
-                    with kol_hasil:
-                        st.success(f"Ditemukan {top_k} ayat paling relevan sesuai filter!")
+                    top_k = min(3, len(df_tersaring))
+                    if top_k == 0:
+                        st.warning("Tidak ada ayat yang cocok dengan filter aktif di sidebar.")
+                    else:
+                        indeks_teratas = np.argsort(skor_kemiripan)[::-1][:top_k]
+                        
+                        st.success(f"Ditemukan {top_k} ayat paling relevan!")
+                        
+                        # Tampilkan hasil ayat
+                        daftar_ayat_terpilih = []
                         for idx in indeks_teratas:
                             baris = df_tersaring.iloc[idx]
                             skor = skor_kemiripan[idx]
+                            daftar_ayat_terpilih.append(baris)
                             
-                            with st.expander(f"📍 {baris['kitab']} {baris['pasal']}:{baris['ayat']} (Kemiripan: {skor:.2f})", expanded=True):
+                            with st.expander(f"📍 {baris['kitab']} {baris['pasal']}:{baris['ayat']} (Tingkat Kemiripan: {skor:.2f})", expanded=True):
                                 st.markdown(f"**Terjemahan Baru (TB):**\n> {baris['teks_tb']}")
                                 st.markdown(f"**Versi Mudah Dibaca (VMD):**\n> {baris['teks_vmd']}")
                                 st.markdown(f"**Alkitab Yang Terbuka (AYT):**\n> {baris['teks_ayt']}")
-                                
-                    with col_grafik:
-                        st.subheader("Peta Kluster Vektor 2D")
                         
-                        # Ambil sampel 300 ayat lain untuk latar belakang peta sebaran agar tidak lemot
-                        df_latar = df_alkitab.sample(n=min(300, len(df_alkitab))).copy()
-                        df_latar['Tipe'] = "Ayat Alkitab Lain"
-                        df_latar['Ukuran_Titik'] = 6
-                        
-                        # Ambil ayat hasil relevan pencarian
-                        df_relevan = df_tersaring.iloc[indeks_teratas].copy()
-                        df_relevan['Tipe'] = "Hasil Relevan"
-                        df_relevan['Ukuran_Titik'] = 14
-                        
-                        # Hitung proyeksi koordinat 2D untuk pertanyaan dosen
-                        proyeksi_tanya = pca_model.transform(vektor_tanya)
-                        df_tanya = pd.DataFrame([{
-                            'kitab': "Pencarian Anda",
-                            'pasal': "",
-                            'ayat': "",
-                            'teks_tb': pertanyaan,
-                            'x': proyeksi_tanya[0, 0],
-                            'y': proyeksi_tanya[0, 1],
-                            'Tipe': "Pertanyaan Anda",
-                            'Ukuran_Titik': 18
-                        }])
-                        
-                        # Menggabungkan data untuk digambar di Plotly
-                        df_plot = pd.concat([df_latar, df_relevan, df_tanya], ignore_index=True)
-                        
-                        fig = px.scatter(
-                            df_plot, 
-                            x='x', 
-                            y='y', 
-                            color='Tipe',
-                            size='Ukuran_Titik',
-                            hover_data=['kitab', 'pasal', 'ayat', 'teks_tb'],
-                            color_discrete_map={
-                                "Ayat Alkitab Lain": "lightgrey",
-                                "Hasil Relevan": "blue",
-                                "Pertanyaan Anda": "red"
-                            }
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+                        # Jalankan RAG menggunakan Gemini
+                        st.markdown("---")
+                        st.markdown("### 🤖 Analisis Teologis AI Generatif (RAG)")
+                        with st.spinner("Menghubungi AI Gemini untuk membuat kesimpulan analisis..."):
+                            analisis_rag = panggil_gemini_rag(pertanyaan, daftar_ayat_terpilih)
+                            if analisis_rag:
+                                st.info(analisis_rag)
+                            else:
+                                st.warning("⚠️ Penjelasan teologis RAG AI sedang tidak bisa ditampilkan.")
+
+# ------------------------------------------
+# TAB 2: CARI AYAT SERUPA (VERSE-TO-VERSE)
+# ------------------------------------------
+with tab2:
+    st.subheader("Cari Ayat yang Memiliki Kedekatan Makna Paling Serupa")
+    st.write("Pilih salah satu ayat Alkitab di bawah ini, AI akan mencari ayat lain yang bermakna setara.")
+    
+    col_k1, col_k2, col_k3 = st.columns(3)
+    with col_k1:
+        kitab_target = st.selectbox("Pilih Kitab:", list(df_alkitab['kitab'].unique()), key="sel_kitab")
+    with col_k2:
+        df_target_kitab = df_alkitab[df_alkitab['kitab'] == kitab_target]
+        pasal_unik = sorted(list(df_target_kitab['pasal'].unique()))
+        pasal_target = st.selectbox("Pilih Pasal:", pasal_unik, key="sel_pasal")
+    with col_k3:
+        df_target_pasal = df_target_kitab[df_target_kitab['pasal'] == pasal_target]
+        ayat_unik = sorted(list(df_target_pasal['ayat'].unique()))
+        ayat_target = st.selectbox("Pilih Ayat:", ayat_unik, key="sel_ayat")
+        
+    # Ambil data ayat target secara penuh
+    row_target = df_target_pasal[df_target_pasal['ayat'] == ayat_target].iloc[0]
+    st.info(f"**Ayat Terpilih:** {row_target['kitab']} {row_target['pasal']}:{row_target['ayat']}\n\n> *\"{row_target['teks_tb']}\"*")
+    
+    if st.button("Cari Ayat Serupa", key="btn_serupa"):
+        with st.spinner("Kecerdasan buatan sedang mencocokkan kemiripan antar ayat Alkitab..."):
+            # Ambil indeks baris asli ayat target dari dataframe utama
+            idx_asli_target = row_target.name
+            
+            # Ambil vektor ayat target
+            vektor_target = vektor_seluruh_ayat[idx_asli_target].reshape(1, -1)
+            
+            # Hitung similarity vektor target dengan seluruh ayat di database tersaring
+            skor_kemiripan_v2 = cosine_similarity(vektor_target, vektor_tersaring)[0]
+            indeks_teratas_v2 = np.argsort(skor_kemiripan_v2)[::-1]
+            
+            # Saring agar tidak merekomendasikan ayat terpilih itu sendiri
+            rekomendasi_akhir = []
+            for idx in indeks_teratas_v2:
+                baris_recom = df_tersaring.iloc[idx]
+                if not (baris_recom['kitab'] == kitab_target and 
+                        baris_recom['pasal'] == pasal_target and 
+                        baris_recom['ayat'] == ayat_target):
+                    rekomendasi_akhir.append((idx, skor_kemiripan_v2[idx]))
+                if len(rekomendasi_akhir) == 3:
+                    break
+            
+            if len(rekomendasi_akhir) == 0:
+                st.warning("Tidak ditemukan ayat serupa dengan filter aktif.")
+            else:
+                st.success("Ditemukan 3 ayat dengan keselarasan makna teologis paling serupa!")
+                for idx, skor in rekomendasi_akhir:
+                    baris = df_tersaring.iloc[idx]
+                    with st.expander(f"📍 {baris['kitab']} {baris['pasal']}:{baris['ayat']} (Kesamaan Makna: {skor:.2f})", expanded=True):
+                        st.markdown(f"**Terjemahan Baru (TB):**\n> {baris['teks_tb']}")
+                        st.markdown(f"**Versi Mudah Dibaca (VMD):**\n> {baris['teks_vmd']}")
+                        st.markdown(f"**Alkitab Yang Terbuka (AYT):**\n> {baris['teks_ayt']}")
