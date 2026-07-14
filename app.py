@@ -18,7 +18,7 @@ REPO_ID = "YesayaAlvinK/bible-search-project"
 @st.cache_resource
 def load_database():
     # Mengunduh database dari GitHub Releases (Bebas blokir IP CDN, stabil, dan kencang)
-    url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0.0/database_ta.pkl"
+    url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0/database_ta.pkl"
     local_filename = "database_ta.pkl"
     
     try:
