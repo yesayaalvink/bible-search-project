@@ -1,44 +1,29 @@
 import os
-# ==========================================
-# TRIK FINAL: BERSIHKAN SEMUA TOKEN DARI MEMORI SISTEM
-# ==========================================
-# Karena repositori Anda PUBLIC, kita WAJIB mematikan deteksi token otomatis
-# agar tidak memicu bug tanda tangan keamanan (Signature Error) Hugging Face.
-os.environ.pop("HF_TOKEN", None)
-os.environ.pop("HF_HUB_TOKEN", None)
-os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
-os.environ.pop("HUGGINGFACE_TOKEN", None)
-os.environ.pop("HUGGINGFACE_CO_TOKEN", None)
-
-# Matikan fitur Xet paralel dan paksa unduhan berjalan 100% anonim (stabil & kencang)
-os.environ["HF_HUB_DISABLE_XET"] = "1"
-os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
 import requests
+import json
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
 
 # ==========================================
-# 1. ATUR ALAMAT REPOSITORI HUGGING FACE & GITHUB
+# 1. ATUR ALAMAT REPOSITORI GITHUB
 # ==========================================
 REPO_ID = "YesayaAlvinK/bible-search-project"
 
 
 # ==========================================
-# 2. PROSES MEMUAT DATABASE DARI GITHUB RELEASES (BEBAS BLOKIR IP)
+# 2. PROSES MEMUAT DATABASE DARI GITHUB RELEASES
 # ==========================================
 @st.cache_resource
 def load_database():
     # Mengunduh database dari GitHub Releases (Bebas blokir IP CDN, stabil, dan kencang)
-    url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0/database_ta.pkl"
+    url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0.0/database_ta.pkl"
     local_filename = "database_ta.pkl"
     
     try:
-        # Mengunduh database dari GitHub Releases
         with requests.get(url_database, stream=True) as r:
             r.raise_for_status()
             with open(local_filename, 'wb') as f:
@@ -57,13 +42,59 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 
 
 # ==========================================
-# 3. PROSES MEMUAT MODEL AI DI SERVER STREAMLIT
+# 3. PROSES MEMUAT MODEL AI SECARA LOKAL (BYPASS HUGGING FACE TOTAL)
 # ==========================================
 @st.cache_resource
 def load_model():
-    # Mengunduh model IndoBERT Anda dari Hugging Face secara anonim
-    # Karena memori token sudah kita bersihkan di atas, proses ini akan berjalan lancar tanpa error Signature!
-    return SentenceTransformer(REPO_ID)
+    model_dir = "local_model"
+    os.makedirs(model_dir, exist_ok=True)
+    os.makedirs(os.path.join(model_dir, "1_Pooling"), exist_ok=True)
+    
+    # Daftar 7 file utama model yang harus didownload dari GitHub Releases
+    files_to_download = [
+        "config.json",
+        "config_sentence_transformers.json",
+        "model.safetensors",
+        "modules.json",
+        "sentence_bert_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json"
+    ]
+    
+    try:
+        # Download semua file utama secara bertahap agar hemat RAM
+        for filename in files_to_download:
+            local_path = os.path.join(model_dir, filename)
+            if not os.path.exists(local_path):
+                url = f"https://github.com/{REPO_ID}/releases/download/v1.0.0/{filename}"
+                with requests.get(url, stream=True) as r:
+                    r.raise_for_status()
+                    with open(local_path, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                
+        # Membuat file 1_Pooling/config.json secara otomatis lewat kode
+        pooling_config_path = os.path.join(model_dir, "1_Pooling", "config.json")
+        if not os.path.exists(pooling_config_path):
+            pooling_data = {
+                "word_embedding_dimension": 768,
+                "pooling_mode_cls_token": False,
+                "pooling_mode_mean_tokens": True,
+                "pooling_mode_max_tokens": False,
+                "pooling_mode_mean_sqrt_len_tokens": False,
+                "pooling_mode_weightedmean_tokens": False,
+                "pooling_mode_lasttoken_tokens": False
+            }
+            with open(pooling_config_path, "w") as f:
+                json.dump(pooling_data, f)
+                
+    except Exception as err:
+        st.error(f"Gagal menyusun folder model lokal di server. Detail: {err}")
+        raise err
+        
+    # Memuat model secara lokal dari folder "local_model" di server Streamlit
+    return SentenceTransformer(model_dir)
 
 model = load_model()
 
