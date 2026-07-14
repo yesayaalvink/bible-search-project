@@ -2,13 +2,11 @@ import os
 import streamlit as st
 
 # ==========================================
-# TRIK RAHASIA: BERSIHKAN SEMUA TOKEN DARI MEMORI SISTEM
+# TRIK RAHASIA: AMBIL DAN BERSIHKAN TOKEN DARI MEMORI SISTEM
 # ==========================================
-# 1. Ambil nilai token secara aman dari Secrets sebelum memorinya dibersihkan
 HF_TOKEN_VAL = st.secrets.get("HF_TOKEN", "")
 GEMINI_API_KEY_VAL = st.secrets.get("GEMINI_API_KEY", "")
 
-# 2. Hapus token dari environment OS agar Hugging Face SDK tidak terganggu saat download
 os.environ.pop("HF_TOKEN", None)
 os.environ.pop("HF_HUB_TOKEN", None)
 os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
@@ -118,47 +116,47 @@ model = load_model()
 
 
 # ==========================================
-# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH - GOOGLE GENAI SDK)
+# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH)
 # ==========================================
 def panggil_gemini_rag(prompt):
     try:
-        # Menggunakan pustaka resmi google-genai dengan memotong waktu berpikir AI menjadi minimal
         interaction = client_gemini.interactions.create(
             model="gemini-3.5-flash",
             input=prompt,
             generation_config=types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(
-                    thinking_level="minimal"  # <--- Memaksa AI langsung menjawab tanpa membuang waktu berpikir (2-3 detik)
+                    thinking_level="minimal"  # Langsung menjawab tanpa lama berpikir
                 )
             )
         )
         return interaction.output_text
-    except Exception:
-        # Menghindari crash jika API Key bermasalah, akan memicu peringatan warning teologis
-        return None
+    except Exception as e:
+        # Mengembalikan string error asli agar bisa dibaca di layar
+        return f"ERROR_DETAIL: {repr(e)}"
 
 
 # ==========================================
 # 5. GENERATOR RAG CADANGAN (QWEN -> LLAMA)
 # ==========================================
 def panggil_hf_model_rag(prompt, model_id):
-    url = f"https://router.huggingface.co/hf-inference/models/{model_id}/v1/chat/completions"
+    url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
     headers = {
         "Authorization": f"Bearer {HF_TOKEN_VAL}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": model_id,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 150
+        "inputs": prompt,
+        "parameters": {"max_new_tokens": 150, "return_full_text": False}
     }
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=8)
         if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content']
-        return None
-    except Exception:
-        return None
+            res = response.json()
+            if isinstance(res, list) and len(res) > 0:
+                return res[0].get('generated_text', '')
+        return f"ERROR_DETAIL: HTTP Status {response.status_code} - {response.text}"
+    except Exception as e:
+        return f"ERROR_DETAIL: {repr(e)}"
 
 
 # ==========================================
@@ -240,7 +238,7 @@ with tab1:
             with st.spinner("AI sedang mencocokkan makna ayat teologis..."):
                 vektor_tanya = get_vektor_pertanyaan(pertanyaan)
                 
-                if vektor_tanya is not None:
+                if| vektor_tanya is not None:
                     if len(vektor_tanya.shape) == 1:
                         vektor_tanya = vektor_tanya.reshape(1, -1)
                         
@@ -281,31 +279,37 @@ with tab1:
                             f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
                         )
                         
-                        # 1. Coba AI Utama (Gemini - Sangat Cepat!)
+                        # 1. Coba AI Utama (Gemini)
                         success_rag = False
                         with st.spinner("Menghubungi AI Utama (Gemini 3.5 Flash)..."):
                             analisis_rag = panggil_gemini_rag(prompt_rag)
-                            if analisis_rag:
+                            if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
                                 st.info(f"### 🤖 Analisis Teologis AI (Gemini 3.5 Flash):\n\n{analisis_rag}")
                                 success_rag = True
+                            else:
+                                st.warning(f"⚠️ AI Utama (Gemini) Gagal. Detail: {analisis_rag}")
                         
                         # 2. Coba AI Cadangan (Qwen) jika Gemini gagal
                         if not success_rag:
-                            st.warning("⚠️ AI Utama (Gemini) sedang sibuk/limit. Menghubungi AI Cadangan (Qwen 2.5)...")
+                            st.warning("Menghubungi AI Cadangan (Qwen 2.5)...")
                             with st.spinner("Menghubungi AI Cadangan (Qwen 2.5)..."):
                                 analisis_rag = panggil_hf_model_rag(prompt_rag, "Qwen/Qwen2.5-7B-Instruct")
-                                if analisis_rag:
+                                if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
                                     st.info(f"### 🤖 Analisis Teologis AI (Qwen 2.5):\n\n{analisis_rag}")
                                     success_rag = True
+                                else:
+                                    st.warning(f"⚠️ AI Cadangan (Qwen 2.5) Gagal. Detail: {analisis_rag}")
                                     
                         # 3. Coba AI Cadangan Darurat (Llama) jika Qwen gagal
                         if not success_rag:
-                            st.warning("⚠️ AI Cadangan (Qwen 2.5) sedang sibuk. Menghubungi AI Cadangan Darurat (Llama 3)...")
+                            st.warning("Menghubungi AI Cadangan Darurat (Llama 3)...")
                             with st.spinner("Menghubungi AI Cadangan Darurat (Llama 3)..."):
                                 analisis_rag = panggil_hf_model_rag(prompt_rag, "meta-llama/Meta-Llama-3-8B-Instruct")
-                                if analisis_rag:
+                                if analisis_rag and not analisis_rag.startswith("ERROR_DETAIL"):
                                     st.info(f"### 🤖 Analisis Teologis AI (Llama 3):\n\n{analisis_rag}")
                                     success_rag = True
+                                else:
+                                    st.warning(f"⚠️ AI Cadangan Darurat (Llama 3) Gagal. Detail: {analisis_rag}")
                                     
                         # 4. Jika semua gagal
                         if not success_rag:
