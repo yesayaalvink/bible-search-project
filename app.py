@@ -15,7 +15,7 @@ REPO_ID = "YesayaAlvinK/bible-search-project"
 
 
 # ==========================================
-# 2. PROSES MEMUAT DATABASE DARI GITHUB RELEASES
+# 2. PROSES MEMUAT DATABASE DARI GITHUB RELEASES (BEBAS BLOKIR IP)
 # ==========================================
 @st.cache_resource
 def load_database():
@@ -24,6 +24,7 @@ def load_database():
     local_filename = "database_ta.pkl"
     
     try:
+        # Mengunduh database dari GitHub Releases
         with requests.get(url_database, stream=True) as r:
             r.raise_for_status()
             with open(local_filename, 'wb') as f:
@@ -74,7 +75,7 @@ def load_model():
                             if chunk:
                                 f.write(chunk)
                                 
-        # Membuat file 1_Pooling/config.json secara otomatis lewat kode
+        # Membuat file 1_Pooling/config.json secara otomatis lewat kode (Disesuaikan agar kompatibel penuh)
         pooling_config_path = os.path.join(model_dir, "1_Pooling", "config.json")
         if not os.path.exists(pooling_config_path):
             pooling_data = {
@@ -82,9 +83,7 @@ def load_model():
                 "pooling_mode_cls_token": False,
                 "pooling_mode_mean_tokens": True,
                 "pooling_mode_max_tokens": False,
-                "pooling_mode_mean_sqrt_len_tokens": False,
-                "pooling_mode_weightedmean_tokens": False,
-                "pooling_mode_lasttoken_tokens": False
+                "pooling_mode_mean_sqrt_len_tokens": False
             }
             with open(pooling_config_path, "w") as f:
                 json.dump(pooling_data, f)
@@ -127,7 +126,7 @@ if st.button("Cari"):
             if vektor_tanya is not None:
                 # Samakan dimensi angka
                 if len(vektor_tanya.shape) == 1:
-                    vektor_tanya = vektor_tanya.reshape(1, -1)
+                    vektor_tanya = codebase_vector = vektor_tanya.reshape(1, -1)
                 elif len(vektor_tanya.shape) == 3:
                     vektor_tanya = vektor_tanya[0][0].reshape(1, -1)
                     
