@@ -14,7 +14,6 @@ from huggingface_hub import hf_hub_download
 # 1. ATUR ALAMAT REPOSITORI HUGGING FACE
 # ==========================================
 REPO_ID = "YesayaAlvink/bible-search-project"
-HF_TOKEN = st.secrets["HF_TOKEN"] 
 
 # URL langsung untuk mengakses model tanpa lewat sistem router yang bug
 API_URL = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{REPO_ID}"
