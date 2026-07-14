@@ -1,12 +1,13 @@
 import os
+import json
 import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
 import requests
-import json
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
+import plotly.express as px  # Library grafik interaktif
 
 # ==========================================
 # 1. ATUR ALAMAT REPOSITORI GITHUB
@@ -15,16 +16,14 @@ REPO_ID = "YesayaAlvinK/bible-search-project"
 
 
 # ==========================================
-# 2. PROSES MEMUAT DATABASE DARI GITHUB RELEASES (BEBAS BLOKIR IP)
+# 2. PROSES MEMUAT DATABASE DARI GITHUB RELEASES
 # ==========================================
 @st.cache_resource
 def load_database():
-    # Mengunduh database dari GitHub Releases (Bebas blokir IP CDN, stabil, dan kencang)
     url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0.0/database_ta.pkl"
     local_filename = "database_ta.pkl"
     
     try:
-        # Mengunduh database dari GitHub Releases
         with requests.get(url_database, stream=True) as r:
             r.raise_for_status()
             with open(local_filename, 'wb') as f:
@@ -43,7 +42,7 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 
 
 # ==========================================
-# 3. PROSES MEMUAT MODEL AI SECARA LOKAL (BYPASS HUGGING FACE TOTAL)
+# 3. PROSES MEMUAT MODEL AI DI SERVER STREAMLIT
 # ==========================================
 @st.cache_resource
 def load_model():
@@ -51,7 +50,6 @@ def load_model():
     os.makedirs(model_dir, exist_ok=True)
     os.makedirs(os.path.join(model_dir, "1_Pooling"), exist_ok=True)
     
-    # Daftar 7 file utama model yang harus didownload dari GitHub Releases
     files_to_download = [
         "config.json",
         "config_sentence_transformers.json",
@@ -63,7 +61,6 @@ def load_model():
     ]
     
     try:
-        # Download semua file utama secara bertahap agar hemat RAM
         for filename in files_to_download:
             local_path = os.path.join(model_dir, filename)
             if not os.path.exists(local_path):
@@ -75,7 +72,6 @@ def load_model():
                             if chunk:
                                 f.write(chunk)
                                 
-        # Membuat file 1_Pooling/config.json secara otomatis lewat kode (Disesuaikan agar kompatibel penuh)
         pooling_config_path = os.path.join(model_dir, "1_Pooling", "config.json")
         if not os.path.exists(pooling_config_path):
             pooling_data = {
@@ -92,14 +88,28 @@ def load_model():
         st.error(f"Gagal menyusun folder model lokal di server. Detail: {err}")
         raise err
         
-    # Memuat model secara lokal dari folder "local_model" di server Streamlit
     return SentenceTransformer(model_dir)
 
 model = load_model()
 
 
 # ==========================================
-# 4. PROSES MEMINTA VEKTOR DARI MODEL AI
+# 4. HITUNG PROYEKSI KOORDINAT 2D (PCA) SECARA CACHED
+# ==========================================
+@st.cache_resource
+def hitung_proyeksi_pca(vektor_ayat):
+    from sklearn.decomposition import PCA
+    pca_model = PCA(n_components=2)
+    koordinat_2d = pca_model.fit_transform(vektor_ayat)
+    return koordinat_2d, pca_model
+
+koordinat_2d, pca_model = hitung_proyeksi_pca(vektor_seluruh_ayat)
+df_alkitab['x'] = koordinat_2d[:, 0]
+df_alkitab['y'] = koordinat_2d[:, 1]
+
+
+# ==========================================
+# 5. PROSES MEMINTA VEKTOR DARI MODEL AI
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
@@ -111,38 +121,137 @@ def get_vektor_pertanyaan(pertanyaan):
 
 
 # ==========================================
-# 5. TAMPILAN USER INTERFACE (UI)
+# 6. TAMPILAN USER INTERFACE (UI)
 # ==========================================
-st.title("Pencarian Semantik Alkitab (IndoBERT)")
+st.set_page_config(page_title="Pencarian Semantik Alkitab", layout="wide")
+st.title("📖 Pencarian Semantik Alkitab (IndoBERT)")
 st.write("Cari ayat berdasarkan makna cerita, bukan sekadar kata kunci.")
 
-pertanyaan = st.text_input("Masukkan pencarian:", placeholder="Contoh: Daniel dilemparkan ke singa")
+# --- BARIS FILTER DROP-DOWN ---
+st.markdown("### 🔍 Penyaringan Metadata (Opsional)")
+col1, col2 = st.columns(2)
 
-if st.button("Cari"):
+# Mengambil urutan kitab unik untuk membagi PL dan PB secara dinamis
+kitab_unik = list(df_alkitab['kitab'].unique())
+kitab_pl = kitab_unik[:39]
+kitab_pb = kitab_unik[39:]
+
+with col1:
+    perjanjian_filter = st.selectbox(
+        "Pilih Bagian Alkitab:", 
+        ["Seluruh Alkitab", "Perjanjian Lama (PL)", "Perjanjian Baru (PB)"]
+    )
+
+with col2:
+    if perjanjian_filter == "Perjanjian Lama (PL)":
+        pilihan_kitab = ["Semua Kitab PL"] + kitab_pl
+    elif perjanjian_filter == "Perjanjian Baru (PB)":
+        pilihan_kitab = ["Semua Kitab PB"] + kitab_pb
+    else:
+        pilihan_kitab = ["Semua Kitab"] + kitab_unik
+        
+    kitab_filter = st.selectbox("Pilih Kitab Spesifik:", pilihan_kitab)
+
+st.markdown("---")
+
+# Mempersiapkan mask penyaringan data
+if perjanjian_filter == "Perjanjian Lama (PL)":
+    if kitab_filter == "Semua Kitab PL":
+        mask_filter = df_alkitab['kitab'].isin(kitab_pl)
+    else:
+        mask_filter = df_alkitab['kitab'] == kitab_filter
+elif perjanjian_filter == "Perjanjian Baru (PB)":
+    if kitab_filter == "Semua Kitab PB":
+        mask_filter = df_alkitab['kitab'].isin(kitab_pb)
+    else:
+        mask_filter = df_alkitab['kitab'] == kitab_filter
+else:
+    if kitab_filter == "Semua Kitab":
+        mask_filter = pd.Series([True] * len(df_alkitab))
+    else:
+        mask_filter = df_alkitab['kitab'] == kitab_filter
+
+# Menyaring DataFrame dan vektor sesuai pilihan drop-down
+df_tersaring = df_alkitab[mask_filter].reset_index(drop=True)
+vektor_tersaring = vektor_seluruh_ayat[mask_filter.values]
+
+# --- KOLOM UTAMA PENCARIAN & GRAFIK ---
+pertanyaan = st.text_input("Masukkan pencarian makna cerita:", placeholder="Contoh: Daniel dilemparkan ke singa")
+
+if st.button("Mulai Cari"):
     if pertanyaan:
-        with st.spinner("AI sedang mencari ayat yang cocok..."):
+        with st.spinner("AI sedang memproses pencarian dan peta kluster matematika..."):
             vektor_tanya = get_vektor_pertanyaan(pertanyaan)
             
             if vektor_tanya is not None:
-                # Samakan dimensi angka
+                # Menghitung kemiripan semantik
                 if len(vektor_tanya.shape) == 1:
-                    vektor_tanya = codebase_vector = vektor_tanya.reshape(1, -1)
+                    vektor_tanya = vektor_tanya.reshape(1, -1)
                 elif len(vektor_tanya.shape) == 3:
                     vektor_tanya = vektor_tanya[0][0].reshape(1, -1)
                     
-                # Hitung kemiripan dengan 31.000 ayat
-                skor_kemiripan = cosine_similarity(vektor_tanya, vektor_seluruh_ayat)[0]
+                skor_kemiripan = cosine_similarity(vektor_tanya, vektor_tersaring)[0]
                 
-                top_k = 3
-                indeks_teratas = np.argsort(skor_kemiripan)[::-1][:top_k]
-                
-                st.success(f"Ditemukan {top_k} ayat yang paling relevan!")
-                
-                for idx in indeks_teratas:
-                    baris = df_alkitab.iloc[idx]
-                    skor = skor_kemiripan[idx]
+                top_k = min(3, len(df_tersaring))
+                if top_k == 0:
+                    st.warning("Tidak ada ayat yang cocok dengan filter yang Anda pilih.")
+                else:
+                    indeks_teratas = np.argsort(skor_kemiripan)[::-1][:top_k]
                     
-                    with st.expander(f"{baris['kitab']} {baris['pasal']}:{baris['ayat']} (Tingkat kecocokan: {skor:.2f})", expanded=True):
-                        st.markdown(f"**Terjemahan Baru (TB):**\n> {baris['teks_tb']}")
-                        st.markdown(f"**Versi Mudah Dibaca (VMD):**\n> {baris['teks_vmd']}")
-                        st.markdown(f"**Alkitab Yang Terbuka (AYT):**\n> {baris['teks_ayt']}")
+                    # Layout Kolom Kiri (Hasil) dan Kolom Kanan (Grafik Visualisasi)
+                    kol_hasil, col_grafik = st.columns([1.1, 1])
+                    
+                    with kol_hasil:
+                        st.success(f"Ditemukan {top_k} ayat paling relevan sesuai filter!")
+                        for idx in indeks_teratas:
+                            baris = df_tersaring.iloc[idx]
+                            skor = skor_kemiripan[idx]
+                            
+                            with st.expander(f"📍 {baris['kitab']} {baris['pasal']}:{baris['ayat']} (Kemiripan: {skor:.2f})", expanded=True):
+                                st.markdown(f"**Terjemahan Baru (TB):**\n> {baris['teks_tb']}")
+                                st.markdown(f"**Versi Mudah Dibaca (VMD):**\n> {baris['teks_vmd']}")
+                                st.markdown(f"**Alkitab Yang Terbuka (AYT):**\n> {baris['teks_ayt']}")
+                                
+                    with col_grafik:
+                        st.subheader("Peta Kluster Vektor 2D")
+                        
+                        # Ambil sampel 300 ayat lain untuk latar belakang peta sebaran agar tidak lemot
+                        df_latar = df_alkitab.sample(n=min(300, len(df_alkitab))).copy()
+                        df_latar['Tipe'] = "Ayat Alkitab Lain"
+                        df_latar['Ukuran_Titik'] = 6
+                        
+                        # Ambil ayat hasil relevan pencarian
+                        df_relevan = df_tersaring.iloc[indeks_teratas].copy()
+                        df_relevan['Tipe'] = "Hasil Relevan"
+                        df_relevan['Ukuran_Titik'] = 14
+                        
+                        # Hitung proyeksi koordinat 2D untuk pertanyaan dosen
+                        proyeksi_tanya = pca_model.transform(vektor_tanya)
+                        df_tanya = pd.DataFrame([{
+                            'kitab': "Pencarian Anda",
+                            'pasal': "",
+                            'ayat': "",
+                            'teks_tb': pertanyaan,
+                            'x': proyeksi_tanya[0, 0],
+                            'y': proyeksi_tanya[0, 1],
+                            'Tipe': "Pertanyaan Anda",
+                            'Ukuran_Titik': 18
+                        }])
+                        
+                        # Menggabungkan data untuk digambar di Plotly
+                        df_plot = pd.concat([df_latar, df_relevan, df_tanya], ignore_index=True)
+                        
+                        fig = px.scatter(
+                            df_plot, 
+                            x='x', 
+                            y='y', 
+                            color='Tipe',
+                            size='Ukuran_Titik',
+                            hover_data=['kitab', 'pasal', 'ayat', 'teks_tb'],
+                            color_discrete_map={
+                                "Ayat Alkitab Lain": "lightgrey",
+                                "Hasil Relevan": "blue",
+                                "Pertanyaan Anda": "red"
+                            }
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
