@@ -3,4 +3,4 @@ pandas
 numpy
 requests
 scikit-learn
-huggingface-hub
+sentence-transformers
