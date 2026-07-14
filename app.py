@@ -1,3 +1,7 @@
+import os
+# PENTING: Paksa matikan fitur Xet agar proses unduh model (498 MB) lancar tanpa stuck di server cloud
+os.environ["HF_HUB_DISABLE_XET"] = "1"
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -45,7 +49,8 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 # ==========================================
 @st.cache_resource
 def load_model():
-    # Server Streamlit bebas mendownload model secara native karena didukung HF Hub SDK resmi
+    # Mengunduh model IndoBERT Anda dari Hugging Face ke server Streamlit
+    # Karena di baris paling atas kita sudah mematikan Xet, unduhan 498 MB ini akan berjalan cepat dan lancar
     return SentenceTransformer(REPO_ID)
 
 model = load_model()
