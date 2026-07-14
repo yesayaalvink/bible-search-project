@@ -1,8 +1,21 @@
 import os
-# Paksa matikan fitur Xet agar proses unduh lancar di server cloud
+# ==========================================
+# TRIK RAHASIA UNTUK MENGAKALI BUG TOKEN HUGGING FACE
+# ==========================================
+# 1. Ambil nilai token Anda secara aman di awal
+import streamlit as st
+HF_TOKEN_VAL = st.secrets["HF_TOKEN"]
+
+# 2. Hapus token dari memori OS agar Hugging Face tidak membacanya secara otomatis
+os.environ.pop("HF_TOKEN", None)
+os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
+os.environ.pop("HUGGINGFACE_TOKEN", None)
+
+# 3. Matikan fitur Xet dan token implisit agar proses unduh publik 100% anonim
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_DISABLE_XET"] = "1"
 
-import streamlit as st
+# 4. Baru kita impor library setelah memori dibersihkan
 import pandas as pd
 import numpy as np
 import pickle
@@ -16,10 +29,7 @@ from huggingface_hub import hf_hub_download
 # Menggunakan repositori tunggal milik akun Anda
 REPO_ID = "YesayaAlvink/bible-search-project"
 
-# Token rahasia Anda untuk memproses pencarian lewat API
-HF_TOKEN = st.secrets["HF_TOKEN"] 
-
-# URL RESMI BARU 2026 (Menggunakan Router Baru Hugging Face)
+# URL Resmi Baru 2026 (Sistem Router Baru Hugging Face)
 API_URL = f"https://router.huggingface.co/hf-inference/models/{REPO_ID}/pipeline/feature-extraction"
 
 
@@ -28,7 +38,7 @@ API_URL = f"https://router.huggingface.co/hf-inference/models/{REPO_ID}/pipeline
 # ==========================================
 @st.cache_resource
 def load_database():
-    # Mengunduh database secara publik (tanpa token) untuk menghindari error Signature
+    # Mengunduh database secara publik (pasti berhasil karena memori token sudah dibersihkan)
     file_path = hf_hub_download(
         repo_id=REPO_ID,
         filename="database_ta.pkl"
@@ -45,14 +55,13 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
-        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-        # Mengirimkan permintaan langsung ke router baru Hugging Face
+        # Kirim token secara manual lewat header HTTP (ini aman & tidak memicu bug)
+        headers = {"Authorization": f"Bearer {HF_TOKEN_VAL}"}
         response = requests.post(API_URL, headers=headers, json={"inputs": pertanyaan})
         
         if response.status_code == 200:
             return np.array(response.json())
         elif response.status_code == 503:
-            # Model sedang loading (cold start) di server Hugging Face
             st.warning("Model AI sedang dibangunkan (loading). Silakan tunggu sekitar 15 detik lalu klik Cari lagi.")
             return None
         else:
