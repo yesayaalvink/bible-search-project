@@ -1,49 +1,39 @@
-import os
-# ==========================================
-# TRIK RAHASIA UNTUK MENGAKALI BUG TOKEN HUGGING FACE
-# ==========================================
-# 1. Ambil nilai token Anda secara aman di awal
 import streamlit as st
-HF_TOKEN_VAL = st.secrets["HF_TOKEN"]
-
-# 2. Hapus token dari memori OS agar Hugging Face tidak membacanya secara otomatis
-os.environ.pop("HF_TOKEN", None)
-os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
-os.environ.pop("HUGGINGFACE_TOKEN", None)
-
-# 3. Matikan fitur Xet dan token implisit agar proses unduh publik 100% anonim
-os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
-os.environ["HF_HUB_DISABLE_XET"] = "1"
-
-# 4. Baru kita impor library setelah memori dibersihkan
 import pandas as pd
 import numpy as np
 import pickle
-import requests  # Menggunakan requests standar untuk menghindari bug routing HF
+import requests  # Menggunakan requests untuk mengunduh database & inference
 from sklearn.metrics.pairwise import cosine_similarity
-from huggingface_hub import hf_hub_download
 
 # ==========================================
 # 1. ATUR ALAMAT REPOSITORI HUGGING FACE
 # ==========================================
-# Menggunakan repositori tunggal milik akun Anda
 REPO_ID = "YesayaAlvink/bible-search-project"
+HF_TOKEN = st.secrets["HF_TOKEN"] 
 
 # URL Resmi Baru 2026 (Sistem Router Baru Hugging Face)
 API_URL = f"https://router.huggingface.co/hf-inference/models/{REPO_ID}/pipeline/feature-extraction"
 
 
 # ==========================================
-# 2. PROSES MEMUAT DATABASE DARI CLOUD
+# 2. PROSES MEMUAT DATABASE DARI CLOUD (MENGGUNAKAN REQUESTS - BEBAS CACHE RUSAK)
 # ==========================================
 @st.cache_resource
 def load_database():
-    # Mengunduh database secara publik (pasti berhasil karena memori token sudah dibersihkan)
-    file_path = hf_hub_download(
-        repo_id=REPO_ID,
-        filename="database_ta.pkl"
-    )
-    with open(file_path, "rb") as f:
+    # Unduh file pkl langsung via HTTP Resolve URL (Bypass library HF SDK & Cache rusak)
+    url_database = f"https://huggingface.co/{REPO_ID}/resolve/main/database_ta.pkl"
+    local_filename = "database_ta.pkl"
+    
+    # Proses unduh secara bertahap (chunking) agar hemat memori RAM Streamlit
+    with requests.get(url_database, stream=True) as r:
+        r.raise_for_status()
+        with open(local_filename, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    
+    # Membaca database hasil unduhan bersih
+    with open(local_filename, "rb") as f:
         data = pickle.load(f)
     return data["tabel_ayat"], data["vektor_ayat"]
 
@@ -55,13 +45,14 @@ df_alkitab, vektor_seluruh_ayat = load_database()
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
-        # Kirim token secara manual lewat header HTTP (ini aman & tidak memicu bug)
-        headers = {"Authorization": f"Bearer {HF_TOKEN_VAL}"}
+        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        # Mengirimkan permintaan langsung ke router baru Hugging Face
         response = requests.post(API_URL, headers=headers, json={"inputs": pertanyaan})
         
         if response.status_code == 200:
             return np.array(response.json())
         elif response.status_code == 503:
+            # Model sedang dibangunkan (cold start) di server Hugging Face
             st.warning("Model AI sedang dibangunkan (loading). Silakan tunggu sekitar 15 detik lalu klik Cari lagi.")
             return None
         else:
