@@ -19,13 +19,19 @@ import requests
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer  # Memuat model langsung di server Streamlit
 
+# IMPORT LIBRARY RESMI GOOGLE GENAI SESUAI REKOMENDASI ANDA
+from google import genai
+
 # ==========================================
 # 1. ATUR ALAMAT REPOSITORI & API GEMINI
 # ==========================================
 REPO_ID = "YesayaAlvinK/bible-search-project"
 
-# API Key Gemini yang Anda berikan
+# API Key Gemini Google AI Studio Anda
 GEMINI_API_KEY = "AQ.Ab8RN6JFM4jr8p93BhwgbJB_nj5L_W5UaWQTl3wabtoww3a6cg"
+
+# Inisialisasi Google GenAI Client resmi menggunakan API Key Anda
+client_gemini = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ==========================================
@@ -108,10 +114,9 @@ model = load_model()
 
 
 # ==========================================
-# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH)
+# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH - GOOGLE GENAI SDK)
 # ==========================================
 def panggil_gemini_rag(query, daftar_ayat):
-    # Menyusun teks ayat sebagai konteks untuk dikirim ke Gemini
     konteks_ayat = ""
     for i, baris in enumerate(daftar_ayat):
         konteks_ayat += f"\n{i+1}. {baris['kitab']} {baris['pasal']}:{baris['ayat']} -> {baris['teks_tb']}"
@@ -124,24 +129,15 @@ def panggil_gemini_rag(query, daftar_ayat):
         f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
     )
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
-    
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=8)
-        if response.status_code == 200:
-            hasil = response.json()
-            # Ekstrak teks balasan dari struktur respon resmi Gemini
-            teks_analisis = hasil['contents'][0]['parts'][0]['text']
-            return teks_analisis
-        else:
-            return None
+        # Menggunakan pustaka resmi google-genai sesuai tangkapan layar Anda
+        interaction = client_gemini.interactions.create(
+            model="gemini-3.5-flash",
+            input=prompt
+        )
+        return interaction.output_text
     except Exception:
+        # Menghindari crash jika API Key bermasalah, akan memicu peringatan warning teologis
         return None
 
 
