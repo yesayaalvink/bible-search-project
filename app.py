@@ -28,7 +28,7 @@ from google import genai
 REPO_ID = "YesayaAlvinK/bible-search-project"
 
 # API Key Gemini Google AI Studio Anda
-GEMINI_API_KEY = "AQ.Ab8RN6JFM4jr8p93BhwgbJB_nj5L_W5UaWQTl3wabtoww3a6cg"
+GEMINI_API_KEY = "AQ.Ab8RN6Jh0kNK2PGyNksJuzCTovcWu5VmuZbHiCNWmDqVI7V9aw"
 
 # Inisialisasi Google GenAI Client resmi menggunakan API Key Anda
 client_gemini = genai.Client(api_key=GEMINI_API_KEY)
