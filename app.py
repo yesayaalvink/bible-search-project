@@ -1,5 +1,5 @@
 import os
-# PAKSA MATIKAN FITUR XET YANG SERING MACET/HANG DI SERVER CLOUD
+# Paksa matikan fitur Xet agar proses unduh lancar di server cloud
 os.environ["HF_HUB_DISABLE_XET"] = "1"
 
 import streamlit as st
@@ -9,21 +9,28 @@ import pickle
 from sklearn.metrics.pairwise import cosine_similarity
 from huggingface_hub import hf_hub_download, InferenceClient
 
-# GANTI DENGAN DETAIL AKUN HUGGING FACE ANDA
-NAMA_AKUN_HF = "YesayaAlvink" 
-NAMA_MODEL_HF = "bible-search-project"  # Pastikan nama model ini sudah persis dengan yang di HF
+# ==========================================
+# 1. ATUR ALAMAT REPOSITORI HUGGING FACE
+# ==========================================
+# Repositori tunggal yang menampung file model AI dan database_ta.pkl
+REPO_ID = "YesayaAlvink/bible-search-project"
+
+# Token rahasia Anda untuk memproses pencarian lewat API
 HF_TOKEN = st.secrets["HF_TOKEN"] 
 
 # Inisialisasi client resmi Hugging Face
 client = InferenceClient(token=HF_TOKEN)
 
-# 2. Otomatis mengunduh database_ta.pkl dari Hugging Face ke server Streamlit
+
+# ==========================================
+# 2. PROSES MEMUAT DATABASE DARI CLOUD
+# ==========================================
 @st.cache_resource
 def load_database():
+    # Mengunduh database secara publik (tanpa token) untuk menghindari error Signature
     file_path = hf_hub_download(
-        repo_id=f"{NAMA_AKUN_HF}/{NAMA_MODEL_HF}",
-        filename="database_ta.pkl",
-        token=HF_TOKEN
+        repo_id=REPO_ID,
+        filename="database_ta.pkl"
     )
     with open(file_path, "rb") as f:
         data = pickle.load(f)
@@ -31,19 +38,26 @@ def load_database():
 
 df_alkitab, vektor_seluruh_ayat = load_database()
 
-# Fungsi baru untuk meminta vektor dari Hugging Face secara resmi lewat router terbaru
+
+# ==========================================
+# 3. PROSES MEMINTA VEKTOR DARI MODEL AI
+# ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
+        # Meminta representasi vektor kalimat menggunakan model yang sudah di-upload ke repo yang sama
         embedding = client.feature_extraction(
             pertanyaan, 
-            model=f"{NAMA_AKUN_HF}/{NAMA_MODEL_HF}"
+            model=REPO_ID
         )
         return np.array(embedding)
     except Exception as e:
-        st.error(f"Gagal memproses kalimat: {repr(e)}. Silakan tunggu beberapa saat lalu coba klik Cari lagi.")
+        st.error(f"Gagal memproses kalimat: {repr(e)}. Silakan coba klik Cari lagi.")
         return None
 
-# 3. Tampilan Aplikasi
+
+# ==========================================
+# 4. TAMPILAN USER INTERFACE (UI)
+# ==========================================
 st.title("Pencarian Semantik Alkitab (IndoBERT)")
 st.write("Cari ayat berdasarkan makna cerita, bukan sekadar kata kunci.")
 
@@ -52,7 +66,6 @@ pertanyaan = st.text_input("Masukkan pencarian:", placeholder="Contoh: Daniel di
 if st.button("Cari"):
     if pertanyaan:
         with st.spinner("AI sedang mencari ayat yang cocok..."):
-            # Ubah pertanyaan jadi angka vektor
             vektor_tanya = get_vektor_pertanyaan(pertanyaan)
             
             if vektor_tanya is not None:
@@ -66,11 +79,12 @@ if st.button("Cari"):
                 skor_kemiripan = cosine_similarity(vektor_tanya, vektor_seluruh_ayat)[0]
                 
                 # Ambil 3 ayat paling mirip
-                indeks_teratas = np.argsort(skor_kemiripan)[::-1][:3]
+                top_k = 3
+                indeks_teratas = np.argsort(skor_kemiripan)[::-1][:top_k]
                 
-                st.success("Ditemukan 3 ayat yang paling relevan!")
+                st.success(f"Ditemukan {top_k} ayat yang paling relevan!")
                 
-                # Tampilkan hasilnya
+                # Tampilkan hasilnya untuk 3 versi Alkitab sekaligus
                 for idx in indeks_teratas:
                     baris = df_alkitab.iloc[idx]
                     skor = skor_kemiripan[idx]
