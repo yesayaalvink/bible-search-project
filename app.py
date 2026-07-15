@@ -332,7 +332,7 @@ with tab1:
     # --- INPUT DAN TOMBOL CARI DI DALAM FORM (ENTER BERFUNGSI) ---
     with st.form("pencarian_form"):
         pertanyaan = st.text_input(
-            "Masukkan pencarian atau pertanyaan mengenai Alkitab :", 
+            "Masukkan pencarian/pertanyaan mengenai Alkitab :", 
             placeholder="Contoh: Kehendak Tuhan bagi manusia"
         )
         submit_button = st.form_submit_button("Mulai Cari 🚀")
