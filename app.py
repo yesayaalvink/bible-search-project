@@ -44,8 +44,11 @@ def load_database():
     url_database = f"https://github.com/{REPO_ID}/releases/download/v1.0.0/database_ta.pkl"
     local_filename = "database_ta.pkl"
     
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     try:
-        with requests.get(url_database, stream=True) as r:
+        with requests.get(url_database, headers=headers, stream=True) as r:
             r.raise_for_status()
             with open(local_filename, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
@@ -86,7 +89,10 @@ def load_model():
             local_path = os.path.join(model_dir, filename)
             if not os.path.exists(local_path):
                 url = f"https://github.com/{REPO_ID}/releases/download/v1.0.0/{filename}"
-                with requests.get(url, stream=True) as r:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                }
+                with requests.get(url, headers=headers, stream=True) as r:
                     r.raise_for_status()
                     with open(local_path, 'wb') as f:
                         for chunk in r.iter_content(chunk_size=8192):
@@ -153,12 +159,12 @@ def generate_rag_stream(prompt):
                 )
             )
         )
+        yield "### 🤖 Analisis Teologis AI Utama (Google Gemini 3.5 Flash):\n\n"
         for chunk in response_stream:
             if chunk.text:
                 yield chunk.text
         return  # Berhenti jika Gemini sukses
     except Exception as e:
-        # Jika Gemini gagal, cetak peringatan inline dan lanjut ke AI Cadangan 1
         yield f"\n\n*(⚠️ AI Utama Gemini gagal/limit. Detail: {repr(e)}. Menghubungi AI Cadangan 1...)*\n\n"
         
     # --- 2. COBA AI CADANGAN 1: LLAMA 3.2 3B (STABIL & SELALU AKTIF) ---
@@ -166,7 +172,7 @@ def generate_rag_stream(prompt):
     try:
         res_text = panggil_hf_model_rag(prompt, model_id_1)
         if res_text and not res_text.startswith("ERROR_DETAIL"):
-            yield f"**[AI Cadangan 1 - Llama 3.2]:**\n\n{res_text}"
+            yield f"### 🤖 Analisis Teologis AI Cadangan 1 (Meta Llama 3.2):\n\n{res_text}"
             return  # Berhenti jika Llama sukses
         else:
             yield f"\n\n*(⚠️ AI Cadangan 1 gagal. Detail: {res_text}. Menghubungi AI Cadangan 2...)*\n\n"
@@ -178,7 +184,7 @@ def generate_rag_stream(prompt):
     try:
         res_text = panggil_hf_model_rag(prompt, model_id_2)
         if res_text and not res_text.startswith("ERROR_DETAIL"):
-            yield f"**[AI Cadangan 2 - Mistral 7B]:**\n\n{res_text}"
+            yield f"### 🤖 Analisis Teologis AI Cadangan 2 (Mistral 7B):\n\n{res_text}"
             return  # Berhenti jika Mistral sukses
         else:
             yield f"\n\n*(⚠️ Semua sistem AI cadangan gagal. Detail: {res_text})*\n\n"
@@ -203,64 +209,113 @@ def get_vektor_pertanyaan(pertanyaan):
 # ==========================================
 st.set_page_config(page_title="Pencarian Semantik Alkitab", layout="wide")
 
-# --- SIDEBAR (PANE SAMPING) UNTUK FILTERING ---
-st.sidebar.title("📖 Filter Alkitab Global")
-st.sidebar.write("Penyaringan ini otomatis berlaku untuk kedua fitur pencarian.")
+# --- POP-UP / KARTU SAMBUTAN SHALOM DI AWAL ---
+if "tutup_panduan" not in st.session_state:
+    st.session_state["tutup_panduan"] = False
 
+if not st.session_state["tutup_panduan"]:
+    with st.container(border=True):
+        st.subheader("👋 Shalom! Selamat Datang di Aplikasi Pencarian Alkitab")
+        st.markdown("""
+        Aplikasi ini didukung oleh **Kecerdasan Buatan (IndoBERT)** untuk membantu Anda menjelajahi firman Tuhan secara mendalam berdasarkan topik teologis.
+        
+        📖 **Fitur Utama yang Tersedia:**
+        1. **Pencarian Semantik (Tab 1):** Cari ayat Alkitab berdasarkan topik atau makna cerita (tidak harus mengetik kata yang persis sama).
+        2. **Cari Ayat Serupa (Tab 2):** Pilih satu ayat spesifik, dan AI akan mencari ayat lain di seluruh Alkitab yang memiliki makna paling setara.
+        3. **Filter Alkitab Pintar:** Anda bisa membatasi pencarian hanya pada Perjanjian Lama, Perjanjian Baru, atau Kitab tertentu saja.
+        4. **Analisis RAG AI:** Menghasilkan kesimpulan penjelasan teologis otomatis yang mengalir langsung (*streaming*) secara real-time!
+        """)
+        if st.button("Mulai Menjelajahi 🚀"):
+            st.session_state["tutup_panduan"] = True
+            st.rerun()
+
+st.title("📖 Sistem Pencarian Semantik Alkitab (IndoBERT)")
+st.write("Silakan gunakan tab di bawah ini untuk mengakses fitur yang berbeda.")
+
+# Inisialisasi session state untuk menyimpan pertanyaan dari tombol klik cepat
+if "input_pertanyaan" not in st.session_state:
+    st.session_state["input_pertanyaan"] = ""
+
+def set_pertanyaan(teks):
+    st.session_state["input_pertanyaan"] = teks
+
+# --- TAB UTAMA (TABS) ---
+tab1, tab2 = st.tabs(["🔍 Pencarian Semantik (Teks)", "🔄 Cari Ayat Serupa (Verse-to-Verse)"])
+
+# Persiapan data pembagian PL dan PB untuk filtering
 kitab_unik = list(df_alkitab['kitab'].unique())
 kitab_pl = kitab_unik[:39]
 kitab_pb = kitab_unik[39:]
 
-perjanjian_filter = st.sidebar.selectbox(
-    "Pilih Perjanjian:", 
-    ["Seluruh Alkitab", "Perjanjian Lama (PL)", "Perjanjian Baru (PB)"]
-)
-
-if perjanjian_filter == "Perjanjian Lama (PL)":
-    pilihan_kitab = ["Semua Kitab PL"] + kitab_pl
-elif perjanjian_filter == "Perjanjian Baru (PB)":
-    pilihan_kitab = ["Semua Kitab PB"] + kitab_pb
-else:
-    pilihan_kitab = ["Semua Kitab"] + kitab_unik
-    
-kitab_filter = st.sidebar.selectbox("Pilih Kitab Spesifik:", pilihan_kitab)
-
-# Mempersiapkan mask penyaringan data secara global
-if perjanjian_filter == "Perjanjian Lama (PL)":
-    if kitab_filter == "Semua Kitab PL":
-        mask_filter = df_alkitab['kitab'].isin(kitab_pl)
-    else:
-        mask_filter = df_alkitab['kitab'] == kitab_filter
-elif perjanjian_filter == "Perjanjian Baru (PB)":
-    if kitab_filter == "Semua Kitab PB":
-        mask_filter = df_alkitab['kitab'].isin(kitab_pb)
-    else:
-        mask_filter = df_alkitab['kitab'] == kitab_filter
-else:
-    if kitab_filter == "Semua Kitab":
-        mask_filter = pd.Series([True] * len(df_alkitab))
-    else:
-        mask_filter = df_alkitab['kitab'] == kitab_filter
-
-# Data tersaring secara global
-df_tersaring = df_alkitab[mask_filter].reset_index(drop=True)
-vektor_tersaring = vektor_seluruh_ayat[mask_filter.values]
-
-
-# --- TAMPILAN TAB UTAMA ---
-st.title("📖 Sistem Pencarian Semantik Alkitab (IndoBERT)")
-st.write("Silakan gunakan tab di bawah ini untuk mengakses fitur yang berbeda.")
-
-tab1, tab2 = st.tabs(["🔍 Pencarian Semantik (Teks)", "🔄 Cari Ayat Serupa (Verse-to-Verse)"])
-
 # ------------------------------------------
-# TAB 1: PENCARIAN SEMANTIK + RAG HIERARKI (STREAMING!)
+# TAB 1: PENCARIAN SEMANTIK
 # ------------------------------------------
 with tab1:
     st.subheader("Cari Ayat Alkitab Berdasarkan Topik Makna Kalimat")
-    pertanyaan = st.text_input("Masukkan pencarian makna cerita:", placeholder="Contoh: kasih tuhan kepada manusia")
+    
+    # --- MENARUH FILTER DI BAWAH TAB (TAB 1) ---
+    st.write("**⚙️ Penyaringan Alkitab (Opsional):**")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        filter_p1 = st.selectbox(
+            "Pilih Perjanjian:", 
+            ["Seluruh Alkitab", "Perjanjian Lama (PL)", "Perjanjian Baru (PB)"],
+            key="filter_p1"
+        )
+    with col_f2:
+        if filter_p1 == "Perjanjian Lama (PL)":
+            opsi_kitab1 = ["Semua Kitab PL"] + kitab_pl
+        elif filter_p1 == "Perjanjian Baru (PB)":
+            opsi_kitab1 = ["Semua Kitab PB"] + kitab_pb
+        else:
+            opsi_kitab1 = ["Semua Kitab"] + kitab_unik
+        filter_k1 = st.selectbox("Pilih Kitab Spesifik:", opsi_kitab1, key="filter_k1")
 
-    if st.button("Mulai Cari", key="btn_pencarian"):
+    # Saring database untuk Tab 1
+    if filter_p1 == "Perjanjian Lama (PL)":
+        mask_t1 = df_alkitab['kitab'].isin(kitab_pl) if filter_k1 == "Semua Kitab PL" else df_alkitab['kitab'] == filter_k1
+    elif filter_p1 == "Perjanjian Baru (PB)":
+        mask_t1 = df_alkitab['kitab'].isin(kitab_pb) if filter_k1 == "Semua Kitab PB" else df_alkitab['kitab'] == filter_k1
+    else:
+        mask_t1 = pd.Series([True] * len(df_alkitab)) if filter_k1 == "Semua Kitab" else df_alkitab['kitab'] == filter_k1
+
+    df_t1 = df_alkitab[mask_t1].reset_index(drop=True)
+    vektor_t1 = vektor_seluruh_ayat[mask_t1.values]
+
+    # --- 5 TOMBOL CONTOH INTERAKTIF ---
+    st.write("**💡 Ide Pencarian Cepat (Klik untuk Mencoba):**")
+    col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
+    with col_s1:
+        if st.button("🦁 Daniel Singa"):
+            set_pertanyaan("Daniel dilemparkan ke singa")
+            st.rerun()
+    with col_s2:
+        if st.button("🌊 Berjalan di Air"):
+            set_pertanyaan("Yesus berjalan di atas air")
+            st.rerun()
+    with col_s3:
+        if st.button("❤️ Kasih Allah"):
+            set_pertanyaan("Kasih Allah yang mulia kepada manusia")
+            st.rerun()
+    with col_s4:
+        if st.button("🍇 Sifat Buah Roh"):
+            set_pertanyaan("Sifat-sifat buah Roh Kudus")
+            st.rerun()
+    with col_s5:
+        if st.button("✝️ Penyaliban Yesus"):
+            set_pertanyaan("Yesus disalibkan untuk menebus dosa")
+            st.rerun()
+
+    # --- INPUT DAN TOMBOL CARI DI DALAM FORM (ENTER BERFUNGSI) ---
+    with st.form("pencarian_form"):
+        pertanyaan = st.text_input(
+            "Masukkan pencarian makna cerita:", 
+            value=st.session_state["input_pertanyaan"],
+            placeholder="Contoh: Daniel dilemparkan ke singa"
+        )
+        submit_button = st.form_submit_button("Mulai Cari 🚀")
+
+    if submit_button:
         if pertanyaan:
             with st.spinner("AI sedang mencocokkan makna ayat teologis..."):
                 vektor_tanya = get_vektor_pertanyaan(pertanyaan)
@@ -269,11 +324,11 @@ with tab1:
                     if len(vektor_tanya.shape) == 1:
                         vektor_tanya = vektor_tanya.reshape(1, -1)
                         
-                    skor_kemiripan = cosine_similarity(vektor_tanya, vektor_tersaring)[0]
+                    skor_kemiripan = cosine_similarity(vektor_tanya, vektor_t1)[0]
                     
-                    top_k = min(3, len(df_tersaring))
+                    top_k = min(3, len(df_t1))
                     if top_k == 0:
-                        st.warning("Tidak ada ayat yang cocok dengan filter aktif di sidebar.")
+                        st.warning("Tidak ada ayat yang cocok dengan filter aktif di atas.")
                     else:
                         indeks_teratas = np.argsort(skor_kemiripan)[::-1][:top_k]
                         
@@ -283,7 +338,7 @@ with tab1:
                         daftar_ayat_terpilih = []
                         konteks_ayat = ""
                         for idx in indeks_teratas:
-                            baris = df_tersaring.iloc[idx]
+                            baris = df_t1.iloc[idx]
                             skor = skor_kemiripan[idx]
                             daftar_ayat_terpilih.append(baris)
                             konteks_ayat += f"\n- {baris['kitab']} {baris['pasal']}:{baris['ayat']} -> {baris['teks_tb']}"
@@ -295,7 +350,6 @@ with tab1:
                         
                         # Jalankan RAG menggunakan Hierarki 3 AI (Streaming!)
                         st.markdown("---")
-                        st.markdown("### 🤖 Analisis Teologis AI Generatif (RAG)")
                         
                         # Susun prompt untuk RAG
                         prompt_rag = (
@@ -306,49 +360,76 @@ with tab1:
                             f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
                         )
                         
-                        # Jalankan proses streaming secara langsung di layar
+                        # Jalankan proses streaming secara langsung di layar dengan label sumber AI
                         with st.spinner("Mempersiapkan saluran AI streaming..."):
                             st.write_stream(generate_rag_stream(prompt_rag))
 
 # ------------------------------------------
-# TAB 2: CARI AYAT SERUPA (VERSE-TO-VERSE)
+# TAB 2: CARI AYAT SERUPA
 # ------------------------------------------
 with tab2:
     st.subheader("Cari Ayat yang Memiliki Kedekatan Makna Paling Serupa")
+    
+    # --- MENARUH FILTER DI BAWAH TAB (TAB 2) ---
+    st.write("**⚙️ Penyaringan Alkitab (Opsional):**")
+    col_f3, col_f4 = st.columns(2)
+    with col_f3:
+        filter_p2 = st.selectbox(
+            "Pilih Perjanjian:", 
+            ["Seluruh Alkitab", "Perjanjian Lama (PL)", "Perjanjian Baru (PB)"],
+            key="filter_p2"
+        )
+    with col_f4:
+        if filter_p2 == "Perjanjian Lama (PL)":
+            opsi_kitab2 = ["Semua Kitab PL"] + kitab_pl
+        elif filter_p2 == "Perjanjian Baru (PB)":
+            opsi_kitab2 = ["Semua Kitab PB"] + kitab_pb
+        else:
+            opsi_kitab2 = ["Semua Kitab"] + kitab_unik
+        filter_k2 = st.selectbox("Pilih Kitab Spesifik:", opsi_kitab2, key="filter_k2")
+
+    # Saring database untuk Tab 2
+    if filter_p2 == "Perjanjian Lama (PL)":
+        mask_t2 = df_alkitab['kitab'].isin(kitab_pl) if filter_k2 == "Semua Kitab PL" else df_alkitab['kitab'] == filter_k2
+    elif filter_p2 == "Perjanjian Baru (PB)":
+        mask_t2 = df_alkitab['kitab'].isin(kitab_pb) if filter_k2 == "Semua Kitab PB" else df_alkitab['kitab'] == filter_k2
+    else:
+        mask_t2 = pd.Series([True] * len(df_alkitab)) if filter_k2 == "Semua Kitab" else df_alkitab['kitab'] == filter_k2
+
+    df_t2 = df_alkitab[mask_t2].reset_index(drop=True)
+    vektor_t2 = vektor_seluruh_ayat[mask_t2.values]
+
+    st.write("---")
     st.write("Pilih salah satu ayat Alkitab di bawah ini, AI akan mencari ayat lain yang bermakna setara.")
     
     col_k1, col_k2, col_k3 = st.columns(3)
     with col_k1:
-        kitab_target = st.selectbox("Pilih Kitab:", list(df_alkitab['kitab'].unique()), key="sel_kitab")
+        kitab_target = st.selectbox("Pilih Kitab Target:", list(df_alkitab['kitab'].unique()), key="sel_kitab")
     with col_k2:
         df_target_kitab = df_alkitab[df_alkitab['kitab'] == kitab_target]
         pasal_unik = sorted(list(df_target_kitab['pasal'].unique()))
-        pasal_target = st.selectbox("Pilih Pasal:", pasal_unik, key="sel_pasal")
+        pasal_target = st.selectbox("Pilih Pasal Target:", pasal_unik, key="sel_pasal")
     with col_k3:
         df_target_pasal = df_target_kitab[df_target_kitab['pasal'] == pasal_target]
         ayat_unik = sorted(list(df_target_pasal['ayat'].unique()))
-        ayat_target = st.selectbox("Pilih Ayat:", ayat_unik, key="sel_ayat")
+        ayat_target = st.selectbox("Pilih Ayat Target:", ayat_unik, key="sel_ayat")
         
     # Ambil data ayat target secara penuh
     row_target = df_target_pasal[df_target_pasal['ayat'] == ayat_target].iloc[0]
     st.info(f"**Ayat Terpilih:** {row_target['kitab']} {row_target['pasal']}:{row_target['ayat']}\n\n> *\"{row_target['teks_tb']}\"*")
     
-    if st.button("Cari Ayat Serupa", key="btn_serupa"):
+    if st.button("Cari Ayat Serupa 🔄", key="btn_serupa"):
         with st.spinner("Kecerdasan buatan sedang mencocokkan kemiripan antar ayat Alkitab..."):
-            # Ambil indeks baris asli ayat target dari dataframe utama
             idx_asli_target = row_target.name
-            
-            # Ambil vektor ayat target
             vektor_target = vektor_seluruh_ayat[idx_asli_target].reshape(1, -1)
             
-            # Hitung similarity vektor target dengan seluruh ayat di database tersaring
-            skor_kemiripan_v2 = cosine_similarity(vektor_target, vektor_tersaring)[0]
+            skor_kemiripan_v2 = cosine_similarity(vektor_target, vektor_t2)[0]
             indeks_teratas_v2 = np.argsort(skor_kemiripan_v2)[::-1]
             
             # Saring agar tidak merekomendasikan ayat terpilih itu sendiri
             rekomendasi_akhir = []
             for idx in indeks_teratas_v2:
-                baris_recom = df_tersaring.iloc[idx]
+                baris_recom = df_t2.iloc[idx]
                 if not (baris_recom['kitab'] == kitab_target and 
                         baris_recom['pasal'] == pasal_target and 
                         baris_recom['ayat'] == ayat_target):
@@ -357,11 +438,11 @@ with tab2:
                     break
             
             if len(rekomendasi_akhir) == 0:
-                st.warning("Tidak ditemukan ayat serupa dengan filter aktif.")
+                st.warning("Tidak ditemukan ayat serupa dengan filter aktif di atas.")
             else:
                 st.success("Ditemukan 3 ayat dengan keselarasan makna teologis paling serupa!")
                 for idx, skor in rekomendasi_akhir:
-                    baris = df_tersaring.iloc[idx]
+                    baris = df_t2.iloc[idx]
                     with st.expander(f"📍 {baris['kitab']} {baris['pasal']}:{baris['ayat']} (Kesamaan Makna: {skor:.2f})", expanded=True):
                         st.markdown(f"**Terjemahan Baru (TB):**\n> {baris['teks_tb']}")
                         st.markdown(f"**Versi Mudah Dibaca (VMD):**\n> {baris['teks_vmd']}")
