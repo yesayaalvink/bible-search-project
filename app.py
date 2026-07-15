@@ -209,21 +209,49 @@ def get_vektor_pertanyaan(pertanyaan):
 # ==========================================
 st.set_page_config(page_title="Pencarian Semantik Alkitab", layout="wide")
 
+# --- DEKORASI VISUAL PREMIUM (CUSTOM CSS) ---
+st.markdown("""
+<style>
+    /* Mengubah gaya tombol submit agar lebih modern & menonjol */
+    div.stButton > button {
+        background-color: #1E3A8A !important;
+        color: white !important;
+        border-radius: 8px !important;
+        border: none !important;
+        font-weight: bold !important;
+        padding: 10px 24px !important;
+        transition: background-color 0.3s ease !important;
+    }
+    div.stButton > button:hover {
+        background-color: #3B82F6 !important;
+        color: white !important;
+    }
+    /* Memperindah tampilan header expander ayat Alkitab */
+    .streamlit-expanderHeader {
+        font-weight: bold !important;
+        background-color: #F3F4F6 !important;
+        border-radius: 6px !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 # --- POP-UP / KARTU SAMBUTAN SHALOM DI AWAL ---
 if "tutup_panduan" not in st.session_state:
     st.session_state["tutup_panduan"] = False
 
 if not st.session_state["tutup_panduan"]:
     with st.container(border=True):
-        st.subheader("👋 Shalom! Selamat Datang di Aplikasi Pencarian Alkitab")
         st.markdown("""
-        Aplikasi ini didukung oleh **Kecerdasan Buatan (IndoBERT)** untuk membantu Anda menjelajahi firman Tuhan secara mendalam berdasarkan topik teologis.
-        
+        ### 👋 Shalom! Selamat Datang di Aplikasi Pencarian Alkitab
+        Aplikasi ini didukung oleh Kecerdasan Buatan (IndoBERT) untuk membantu Anda menjelajahi firman Tuhan secara mendalam berdasarkan topik teologis.
+
         📖 **Fitur Utama yang Tersedia:**
-        1. **Pencarian Semantik (Tab 1):** Cari ayat Alkitab berdasarkan topik atau makna cerita (tidak harus mengetik kata yang persis sama).
-        2. **Cari Ayat Serupa (Tab 2):** Pilih satu ayat spesifik, dan AI akan mencari ayat lain di seluruh Alkitab yang memiliki makna paling setara.
-        3. **Filter Alkitab Pintar:** Anda bisa membatasi pencarian hanya pada Perjanjian Lama, Perjanjian Baru, atau Kitab tertentu saja.
-        4. **Analisis RAG AI:** Menghasilkan kesimpulan penjelasan teologis otomatis yang mengalir langsung (*streaming*) secara real-time!
+
+        * **Pencarian Semantik** : Cari ayat Alkitab berdasarkan topik atau makna cerita.
+        * **Cari Ayat Serupa** : Pilih satu ayat spesifik, dan AI akan mencari ayat lain di seluruh Alkitab yang memiliki makna paling setara.
+        * **Filter Alkitab Pintar** : Anda bisa membatasi pencarian hanya pada Perjanjian Lama, Perjanjian Baru, atau Kitab tertentu saja.
+        * **Analisis RAG AI** : Menghasilkan kesimpulan penjelasan teologis otomatis yang mengalir langsung secara real-time!
         """)
         if st.button("Mulai Menjelajahi 🚀"):
             st.session_state["tutup_panduan"] = True
@@ -231,13 +259,6 @@ if not st.session_state["tutup_panduan"]:
 
 st.title("📖 Sistem Pencarian Semantik Alkitab (IndoBERT)")
 st.write("Silakan gunakan tab di bawah ini untuk mengakses fitur yang berbeda.")
-
-# Inisialisasi session state untuk menyimpan pertanyaan dari tombol klik cepat
-if "input_pertanyaan" not in st.session_state:
-    st.session_state["input_pertanyaan"] = ""
-
-def set_pertanyaan(teks):
-    st.session_state["input_pertanyaan"] = teks
 
 # --- TAB UTAMA (TABS) ---
 tab1, tab2 = st.tabs(["🔍 Pencarian Semantik (Teks)", "🔄 Cari Ayat Serupa (Verse-to-Verse)"])
@@ -282,36 +303,11 @@ with tab1:
     df_t1 = df_alkitab[mask_t1].reset_index(drop=True)
     vektor_t1 = vektor_seluruh_ayat[mask_t1.values]
 
-    # --- 5 TOMBOL CONTOH INTERAKTIF ---
-    st.write("**💡 Ide Pencarian Cepat (Klik untuk Mencoba):**")
-    col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
-    with col_s1:
-        if st.button("🦁 Daniel Singa"):
-            set_pertanyaan("Daniel dilemparkan ke singa")
-            st.rerun()
-    with col_s2:
-        if st.button("🌊 Berjalan di Air"):
-            set_pertanyaan("Yesus berjalan di atas air")
-            st.rerun()
-    with col_s3:
-        if st.button("❤️ Kasih Allah"):
-            set_pertanyaan("Kasih Allah yang mulia kepada manusia")
-            st.rerun()
-    with col_s4:
-        if st.button("🍇 Sifat Buah Roh"):
-            set_pertanyaan("Sifat-sifat buah Roh Kudus")
-            st.rerun()
-    with col_s5:
-        if st.button("✝️ Penyaliban Yesus"):
-            set_pertanyaan("Yesus disalibkan untuk menebus dosa")
-            st.rerun()
-
     # --- INPUT DAN TOMBOL CARI DI DALAM FORM (ENTER BERFUNGSI) ---
     with st.form("pencarian_form"):
         pertanyaan = st.text_input(
             "Masukkan pencarian makna cerita:", 
-            value=st.session_state["input_pertanyaan"],
-            placeholder="Contoh: Daniel dilemparkan ke singa"
+            placeholder="Perkataan Alkitab tentang menghormati orangtua"
         )
         submit_button = st.form_submit_button("Mulai Cari 🚀")
 
@@ -351,12 +347,12 @@ with tab1:
                         # Jalankan RAG menggunakan Hierarki 3 AI (Streaming!)
                         st.markdown("---")
                         
-                        # Susun prompt untuk RAG
+                        # Susun prompt untuk RAG dengan instruksi bahasa teologi yang menarik & mudah dipahami
                         prompt_rag = (
                             f"Anda adalah seorang asisten Teologi Kristen yang ahli dalam penafsiran Alkitab. "
                             f"Pengguna sedang mencari topik: '{pertanyaan}'.\n\n"
                             f"Berikut adalah 3 ayat relevan yang ditemukan dari Alkitab:\n{konteks_ayat}\n\n"
-                            f"Berikan penjelasan singkat teologis (maksimal 3-4 kalimat) dalam bahasa Indonesia, "
+                            f"Berikan penjelasan singkat teologis (maksimal 3-4 kalimat) dalam bahasa Indonesia yang menarik dan mudah dipahami, "
                             f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
                         )
                         
