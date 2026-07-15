@@ -229,14 +229,60 @@ def get_vektor_pertanyaan(pertanyaan):
 # ==========================================
 st.set_page_config(page_title="Pencarian Semantik Alkitab", layout="wide")
 
+# ==========================================
+# SUNTIKKAN DEKORASI CSS & ORNAMEN VEKTOR POJOK KANAN ATAS
+# ==========================================
+st.markdown("""
+<style>
+    /* Desain garis batas emas di sebelah kiri expander ayat agar tampak teologis */
+    .streamlit-expanderHeader {
+        border-left: 5px solid #d4af37 !important;
+        background-color: #fcfaf2 !important;
+        border-radius: 4px;
+        font-weight: bold !important;
+    }
+</style>
+
+<!-- Ornamen Vektor Pojok Kanan Atas: Sinar, Alkitab Terbuka, Salib, dan Merpati Terbang -->
+<div style="position: absolute; top: -65px; right: 15px; z-index: 999; opacity: 0.95; pointer-events: none;">
+    <svg width="120" height="120" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Sinar Keemasan (Rays of Light) -->
+        <line x1="50" y1="12" x2="50" y2="4" stroke="#f6e05e" stroke-width="1.5" stroke-dasharray="1 1" />
+        <line x1="33" y1="18" x2="23" y2="10" stroke="#f6e05e" stroke-width="1.5" stroke-dasharray="1 1" />
+        <line x1="67" y1="18" x2="77" y2="10" stroke="#f6e05e" stroke-width="1.5" stroke-dasharray="1 1" />
+        <line x1="28" y1="35" x2="16" y2="35" stroke="#f6e05e" stroke-width="1.5" stroke-dasharray="1 1" />
+        <line x1="72" y1="35" x2="84" y2="35" stroke="#f6e05e" stroke-width="1.5" stroke-dasharray="1 1" />
+        
+        <!-- Alkitab Terbuka (Open Holy Bible) -->
+        <path d="M15 75C32 75 50 80 50 80C50 80 68 75 85 75V40C68 40 50 45 50 45C50 45 32 40 15 40V75Z" fill="#ffffff" stroke="#d4af37" stroke-width="2.2" stroke-linejoin="round"/>
+        <path d="M50 45V80" stroke="#d4af37" stroke-width="2"/>
+        <path d="M15 78C32 78 50 83 50 80" stroke="#d4af37" stroke-width="1"/>
+        <path d="M85 78C68 78 50 83 50 80" stroke="#d4af37" stroke-width="1"/>
+        
+        <!-- Salib Suci (The Holy Cross) -->
+        <path d="M50 25V58" stroke="#d4af37" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M41 35H59" stroke="#d4af37" stroke-width="3.5" stroke-linecap="round"/>
+        
+        <!-- Merpati Perdamaian dengan Ranting Zaitun (Dove of Peace with Olive Branch) -->
+        <!-- Garis minimalis pembentuk sayap dan badan merpati -->
+        <path d="M48 20 C42 16, 32 18, 28 24 C32 28, 42 26, 48 20" fill="#ffffff" stroke="#718096" stroke-width="1.2" stroke-linejoin="round"/>
+        <path d="M48 20 C54 16, 64 18, 68 24 C64 28, 54 26, 48 20" fill="#ffffff" stroke="#718096" stroke-width="1.2" stroke-linejoin="round"/>
+        <path d="M48 20 C46 32, 50 38, 50 44" stroke="#718096" stroke-width="1.5" stroke-linecap="round"/>
+        <!-- Ranting Zaitun di Paruh Merpati -->
+        <path d="M45 23 C43 24, 40 23, 38 25" stroke="#48bb78" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="38" cy="25" r="1.5" fill="#48bb78" />
+    </svg>
+</div>
+""", unsafe_allow_html=True)
+
 # --- POP-UP / KARTU SAMBUTAN SHALOM DI AWAL ---
 if "tutup_panduan" not in st.session_state:
     st.session_state["tutup_panduan"] = False
 
 if not st.session_state["tutup_panduan"]:
     with st.container(border=True):
-        st.subheader("👋 Shalom! Selamat Datang di Aplikasi Pencarian Alkitab")
         st.markdown("""
+        ### 👋 Shalom! Selamat Datang di Aplikasi Pencarian Alkitab
         Aplikasi ini didukung oleh Kecerdasan Buatan (IndoBERT) untuk membantu Anda menjelajahi firman Tuhan secara mendalam berdasarkan topik teologis.
         
         📖 **Fitur Utama yang Tersedia:**
@@ -439,7 +485,6 @@ with tab2:
                         st.markdown(f"**Alkitab Yang Terbuka (AYT):**\n> {baris['teks_ayt']}")
 
 # --- DEKORASI VISUAL PREMIUM (FOOTER TEOLOGIS) ---
-# Menampilkan ornamen Merpati 🕊️, Alkitab 📖, dan Salib ✝️ secara indah di bagian paling bawah
 st.markdown("""
 <div style="text-align: center; margin-top: 80px; padding: 25px; border-top: 1px solid #e2e8f0; color: #888888;">
     <p style="font-size: 28px; margin-bottom: 5px;">🕊️ &nbsp; 📖 &nbsp; ✝️</p>
