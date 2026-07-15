@@ -122,10 +122,27 @@ model = load_model()
 
 
 # ==========================================
-# 4. GENERATOR HIERARKI RAG DENGAN SISTEM STREAMING
+# 4. FUNGSI RAG GENERATOR (GEMINI 3.5 FLASH)
 # ==========================================
+def panggil_gemini_rag(prompt):
+    try:
+        interaction = client_gemini.interactions.create(
+            model="gemini-3.5-flash",
+            input=prompt,
+            generation_config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(
+                    thinking_level="minimal"  # Langsung menjawab tanpa lama berpikir
+                )
+            )
+        )
+        return interaction.output_text
+    except Exception as e:
+        return f"ERROR_DETAIL: {repr(e)}"
 
-# AI 2 & 3 (Cadangan): Qwen / Mistral via Hugging Face Serverless
+
+# ==========================================
+# 5. GENERATOR RAG CADANGAN (QWEN -> LLAMA)
+# ==========================================
 def panggil_hf_model_rag(prompt, model_id):
     url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
     headers = {
@@ -146,7 +163,10 @@ def panggil_hf_model_rag(prompt, model_id):
     except Exception as e:
         return f"ERROR_DETAIL: {repr(e)}"
 
-# Fungsi Generator Utama untuk mensuplai teks streaming ke Streamlit
+
+# ==========================================
+# 6. FUNGSI GENERATOR UTAMA UNTUK STREAMING RAG
+# ==========================================
 def generate_rag_stream(prompt):
     # --- 1. COBA AI UTAMA: GEMINI 3.5 FLASH (STREAMING) ---
     try:
@@ -155,7 +175,7 @@ def generate_rag_stream(prompt):
             contents=prompt,
             config=types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(
-                    thinking_budget=0  # Matikan proses penalaran/thinking agar instan & langsung streaming
+                    thinking_budget=0  # Matikan thinking agar instan & langsung streaming
                 )
             )
         )
@@ -163,29 +183,29 @@ def generate_rag_stream(prompt):
         for chunk in response_stream:
             if chunk.text:
                 yield chunk.text
-        return  # Berhenti jika Gemini sukses
+        return
     except Exception as e:
         yield f"\n\n*(⚠️ AI Utama Gemini gagal/limit. Detail: {repr(e)}. Menghubungi AI Cadangan 1...)*\n\n"
         
-    # --- 2. COBA AI CADANGAN 1: LLAMA 3.2 3B (STABIL & SELALU AKTIF) ---
+    # --- 2. COBA AI CADANGAN 1: LLAMA 3.2 3B (STABIL) ---
     model_id_1 = "meta-llama/Llama-3.2-3B-Instruct"
     try:
         res_text = panggil_hf_model_rag(prompt, model_id_1)
         if res_text and not res_text.startswith("ERROR_DETAIL"):
             yield f"### 🤖 Analisis Teologis AI Cadangan 1 (Meta Llama 3.2):\n\n{res_text}"
-            return  # Berhenti jika Llama sukses
+            return
         else:
             yield f"\n\n*(⚠️ AI Cadangan 1 gagal. Detail: {res_text}. Menghubungi AI Cadangan 2...)*\n\n"
     except Exception as e:
         yield f"\n\n*(⚠️ AI Cadangan 1 gagal. Detail: {repr(e)}. Menghubungi AI Cadangan 2...)*\n\n"
         
-    # --- 3. COBA AI CADANGAN 2: MISTRAL 7B (PERTAHANAN TERAKHIR) ---
+    # --- 3. COBA AI CADANGAN 2: MISTRAL 7B ---
     model_id_2 = "mistralai/Mistral-7B-Instruct-v0.3"
     try:
         res_text = panggil_hf_model_rag(prompt, model_id_2)
         if res_text and not res_text.startswith("ERROR_DETAIL"):
             yield f"### 🤖 Analisis Teologis AI Cadangan 2 (Mistral 7B):\n\n{res_text}"
-            return  # Berhenti jika Mistral sukses
+            return
         else:
             yield f"\n\n*(⚠️ Semua sistem AI cadangan gagal. Detail: {res_text})*\n\n"
     except Exception as e:
@@ -193,7 +213,7 @@ def generate_rag_stream(prompt):
 
 
 # ==========================================
-# 5. PROSES MEMINTA VEKTOR DARI MODEL AI
+# 7. PROSES MEMINTA VEKTOR DARI MODEL AI
 # ==========================================
 def get_vektor_pertanyaan(pertanyaan):
     try:
@@ -205,36 +225,9 @@ def get_vektor_pertanyaan(pertanyaan):
 
 
 # ==========================================
-# 6. TAMPILAN USER INTERFACE (UI)
+# 8. TAMPILAN USER INTERFACE (UI)
 # ==========================================
 st.set_page_config(page_title="Pencarian Semantik Alkitab", layout="wide")
-
-# --- DEKORASI VISUAL PREMIUM (CUSTOM CSS) ---
-st.markdown("""
-<style>
-    /* Mengubah gaya tombol submit agar lebih modern & menonjol */
-    div.stButton > button {
-        background-color: #1E3A8A !important;
-        color: white !important;
-        border-radius: 8px !important;
-        border: none !important;
-        font-weight: bold !important;
-        padding: 10px 24px !important;
-        transition: background-color 0.3s ease !important;
-    }
-    div.stButton > button:hover {
-        background-color: #3B82F6 !important;
-        color: white !important;
-    }
-    /* Memperindah tampilan header expander ayat Alkitab */
-    .streamlit-expanderHeader {
-        font-weight: bold !important;
-        background-color: #F3F4F6 !important;
-        border-radius: 6px !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 
 # --- POP-UP / KARTU SAMBUTAN SHALOM DI AWAL ---
 if "tutup_panduan" not in st.session_state:
@@ -242,16 +235,15 @@ if "tutup_panduan" not in st.session_state:
 
 if not st.session_state["tutup_panduan"]:
     with st.container(border=True):
+        st.subheader("👋 Shalom! Selamat Datang di Aplikasi Pencarian Alkitab")
         st.markdown("""
-        ### 👋 Shalom! Selamat Datang di Aplikasi Pencarian Alkitab
         Aplikasi ini didukung oleh Kecerdasan Buatan (IndoBERT) untuk membantu Anda menjelajahi firman Tuhan secara mendalam berdasarkan topik teologis.
-
+        
         📖 **Fitur Utama yang Tersedia:**
-
-        * **Pencarian Semantik** : Cari ayat Alkitab berdasarkan topik atau makna cerita.
-        * **Cari Ayat Serupa** : Pilih satu ayat spesifik, dan AI akan mencari ayat lain di seluruh Alkitab yang memiliki makna paling setara.
-        * **Filter Alkitab Pintar** : Anda bisa membatasi pencarian hanya pada Perjanjian Lama, Perjanjian Baru, atau Kitab tertentu saja.
-        * **Analisis RAG AI** : Menghasilkan kesimpulan penjelasan teologis otomatis yang mengalir langsung secara real-time!
+        * **Pencarian Semantik:** Cari ayat Alkitab berdasarkan topik atau makna cerita.
+        * **Cari Ayat Serupa:** Pilih satu ayat spesifik, dan AI akan mencari ayat lain di seluruh Alkitab yang memiliki makna paling setara.
+        * **Filter Alkitab Pintar:** Anda bisa membatasi pencarian hanya pada Perjanjian Lama, Perjanjian Baru, atau Kitab tertentu saja.
+        * **Analisis RAG AI:** Menghasilkan kesimpulan penjelasan teologis otomatis yang mengalir langsung secara real-time!
         """)
         if st.button("Mulai Menjelajahi 🚀"):
             st.session_state["tutup_panduan"] = True
@@ -303,11 +295,13 @@ with tab1:
     df_t1 = df_alkitab[mask_t1].reset_index(drop=True)
     vektor_t1 = vektor_seluruh_ayat[mask_t1.values]
 
+    st.write("---")
+
     # --- INPUT DAN TOMBOL CARI DI DALAM FORM (ENTER BERFUNGSI) ---
     with st.form("pencarian_form"):
         pertanyaan = st.text_input(
-            "Masukkan pencarian makna cerita:", 
-            placeholder="Perkataan Alkitab tentang menghormati orangtua"
+            "Masukkan pencarian atau pertanyaan mengenai Alkitab :", 
+            placeholder="Contoh: Kehendak Tuhan bagi manusia"
         )
         submit_button = st.form_submit_button("Mulai Cari 🚀")
 
@@ -347,13 +341,13 @@ with tab1:
                         # Jalankan RAG menggunakan Hierarki 3 AI (Streaming!)
                         st.markdown("---")
                         
-                        # Susun prompt untuk RAG dengan instruksi bahasa teologi yang menarik & mudah dipahami
+                        # Susun prompt untuk RAG (Dalam bahasa Indonesia yang menarik & mudah dipahami)
                         prompt_rag = (
                             f"Anda adalah seorang asisten Teologi Kristen yang ahli dalam penafsiran Alkitab. "
-                            f"Pengguna sedang mencari topik: '{pertanyaan}'.\n\n"
+                            f"Pengguna sedang mencari topik atau bertanya: '{pertanyaan}'.\n\n"
                             f"Berikut adalah 3 ayat relevan yang ditemukan dari Alkitab:\n{konteks_ayat}\n\n"
-                            f"Berikan penjelasan singkat teologis (maksimal 3-4 kalimat) dalam bahasa Indonesia yang menarik dan mudah dipahami, "
-                            f"yang menjelaskan korelasi makna teologis antara topik pencarian dengan ayat-ayat di atas."
+                            f"Berikan penjelasan teologis singkat (maksimal 3-4 kalimat) dalam bahasa Indonesia yang menarik dan mudah dipahami, "
+                            f"yang menjelaskan korelasi makna teologis antara pertanyaan tersebut dengan ayat-ayat di atas."
                         )
                         
                         # Jalankan proses streaming secara langsung di layar dengan label sumber AI
@@ -443,3 +437,14 @@ with tab2:
                         st.markdown(f"**Terjemahan Baru (TB):**\n> {baris['teks_tb']}")
                         st.markdown(f"**Versi Mudah Dibaca (VMD):**\n> {baris['teks_vmd']}")
                         st.markdown(f"**Alkitab Yang Terbuka (AYT):**\n> {baris['teks_ayt']}")
+
+# --- DEKORASI VISUAL PREMIUM (FOOTER TEOLOGIS) ---
+# Menampilkan ornamen Merpati 🕊️, Alkitab 📖, dan Salib ✝️ secara indah di bagian paling bawah
+st.markdown("""
+<div style="text-align: center; margin-top: 80px; padding: 25px; border-top: 1px solid #e2e8f0; color: #888888;">
+    <p style="font-size: 28px; margin-bottom: 5px;">🕊️ &nbsp; 📖 &nbsp; ✝️</p>
+    <p style="font-size: 13px; font-style: italic; font-family: 'Georgia', serif; color: #718096; margin-top: 10px;">
+        "Sebab firman Allah hidup dan kuat dan lebih tajam dari pada pedang bermata dua mana pun..." — Ibrani 4:12
+    </p>
+</div>
+""", unsafe_allow_html=True)
